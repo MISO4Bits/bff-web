@@ -1,0 +1,338 @@
+openapi: 3.1.3
+
+info:
+  title: BFF Web — Onboarding
+  summary: API del canal web para registro y onboarding de clientes de Solventa.
+  description: |
+    Backend for Frontend del cliente web. Orquesta el *journey de originación*.
+
+    Alcance de esta versión (`0.1.x`): **registro de cliente** (identidad + alta en
+    CoreTransaccional) y el paso de **consentimientos**. Los pasos de cotización y
+    perfilamiento se agregan en versiones posteriores.
+
+    Entrada real: `Cliente Web → Cloud LB → Cloud Armor (WAF) → API Gateway → BFF Web`.
+    El API Gateway valida firma y expiración del token; el BFF valida identidad de
+    negocio y scopes.
+
+    Errores en formato **RFC 9457 (Problem Details)**, `application/problem+json`.
+  version: 0.1.0
+  contact:
+    name: Equipo 4Bits
+  license:
+    name: Uso académico 4Bits
+
+servers:
+  - url: https://api.dev.solventa4bits.com/web
+    description: Entorno de desarrollo
+
+tags:
+  - name: Registro
+    description: Alta de una persona en la plataforma.
+  - name: Sesión
+    description: Inicio de sesión y refresco de token.
+  - name: Cuenta
+    description: Datos del cliente autenticado.
+  - name: Consentimientos
+    description: Consentimientos del cliente autenticado.
+
+security:
+  - clienteAuth: []
+
+paths:
+  /v1/registro:
+    post:
+      operationId: registrarse
+      tags: [Registro]
+      summary: Registra una persona y abre sesión
+      description: |
+        **Público** (no requiere token).
+
+        Orquesta:
+        1. Crea la credencial de autenticación en Identity Platform.
+        2. Crea el cliente en CoreTransaccional (`POST /clientes`) con el `identityRef`.
+        3. Devuelve una sesión iniciada.
+
+        Si el correo o el documento ya existen responde `409` y no deja nada creado
+        (revierte la credencial si alcanzó a crearse). Idempotente con `Idempotency-Key`.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegistroRequest' }
+      responses:
+        '201':
+          description: Cliente creado y sesión iniciada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistroResponse' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/EntidadNoProcesable' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
+
+  /v1/sesiones:
+    post:
+      operationId: iniciarSesion
+      tags: [Sesión]
+      summary: Inicia sesión con correo y contraseña
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CredencialesRequest' }
+      responses:
+        '200':
+          description: Sesión iniciada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sesion' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+
+  /v1/sesiones/refresco:
+    post:
+      operationId: refrescarSesion
+      tags: [Sesión]
+      summary: Refresca el token de acceso
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: Nuevo token de acceso.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sesion' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+
+  /v1/cuenta:
+    get:
+      operationId: obtenerCuenta
+      tags: [Cuenta]
+      summary: Devuelve los datos del cliente autenticado
+      responses:
+        '200':
+          description: Datos del cliente.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cuenta' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+
+  /v1/cuenta/consentimientos:
+    get:
+      operationId: listarMisConsentimientos
+      tags: [Consentimientos]
+      summary: Estado de mis consentimientos
+      responses:
+        '200':
+          description: Lista de consentimientos del cliente.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ConsentimientoVista' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+    post:
+      operationId: otorgarMiConsentimiento
+      tags: [Consentimientos]
+      summary: Otorga un consentimiento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtorgarConsentimientoRequest' }
+      responses:
+        '201':
+          description: Consentimiento otorgado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsentimientoVista' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+
+  /v1/cuenta/consentimientos/{scope}:
+    parameters:
+      - name: scope
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ConsentimientoScope' }
+    delete:
+      operationId: revocarMiConsentimiento
+      tags: [Consentimientos]
+      summary: Revoca un consentimiento
+      responses:
+        '204':
+          description: Consentimiento revocado.
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+components:
+
+  securitySchemes:
+    clienteAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de Identity Platform obtenido en `/v1/registro` o `/v1/sesiones`.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Clave de idempotencia para reintentar el registro sin duplicar.
+      schema: { type: string, maxLength: 64 }
+
+  responses:
+    SolicitudInvalida:
+      description: Solicitud mal formada o con validación de esquema fallida.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    NoAutorizado:
+      description: Falta el token, está expirado o es inválido.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    Conflicto:
+      description: El correo o el documento ya están registrados.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    EntidadNoProcesable:
+      description: La solicitud es válida pero incumple una regla de negocio.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    NoEncontrado:
+      description: El recurso no existe.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    DependenciaNoDisponible:
+      description: Una dependencia aguas abajo (Identity Platform / CoreTransaccional) no respondió a tiempo.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+
+  schemas:
+
+    RegistroRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, tipoDocumento, numeroDocumento, primerNombre, primerApellido, fechaNacimiento, politicaVersion, aceptaTerminos]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, format: password, minLength: 10, maxLength: 128 }
+        tipoDocumento: { $ref: '#/components/schemas/TipoDocumento' }
+        numeroDocumento: { type: string, minLength: 4, maxLength: 20, pattern: '^[0-9A-Za-z-]+$' }
+        primerNombre: { type: string, minLength: 1, maxLength: 60 }
+        segundoNombre: { type: [string, 'null'], maxLength: 60 }
+        primerApellido: { type: string, minLength: 1, maxLength: 60 }
+        segundoApellido: { type: [string, 'null'], maxLength: 60 }
+        fechaNacimiento: { type: string, format: date }
+        telefono: { type: [string, 'null'], pattern: '^\+?[0-9]{7,15}$' }
+        politicaVersion: { type: string, maxLength: 20, description: Versión de términos y política de datos aceptada. }
+        aceptaTerminos:
+          type: boolean
+          const: true
+          description: Debe ser true; el cliente aceptó términos y política de tratamiento de datos.
+
+    RegistroResponse:
+      type: object
+      additionalProperties: false
+      required: [cuenta, sesion]
+      properties:
+        cuenta: { $ref: '#/components/schemas/Cuenta' }
+        sesion: { $ref: '#/components/schemas/Sesion' }
+
+    CredencialesRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+
+    Sesion:
+      type: object
+      additionalProperties: false
+      required: [accessToken, tokenType, expiresIn, refreshToken]
+      properties:
+        accessToken: { type: string, description: JWT de Identity Platform. }
+        tokenType: { type: string, const: Bearer }
+        expiresIn: { type: integer, description: Segundos de vigencia del accessToken. }
+        refreshToken: { type: string }
+
+    Cuenta:
+      type: object
+      additionalProperties: false
+      required: [clienteId, primerNombre, primerApellido, email, estado]
+      properties:
+        clienteId: { type: string, format: uuid }
+        primerNombre: { type: string }
+        segundoNombre: { type: [string, 'null'] }
+        primerApellido: { type: string }
+        segundoApellido: { type: [string, 'null'] }
+        email: { type: string, format: email }
+        telefono: { type: [string, 'null'] }
+        estado: { $ref: '#/components/schemas/EstadoCliente' }
+
+    OtorgarConsentimientoRequest:
+      type: object
+      additionalProperties: false
+      required: [scope, politicaVersion]
+      properties:
+        scope: { $ref: '#/components/schemas/ConsentimientoScope' }
+        politicaVersion: { type: string, maxLength: 20 }
+
+    ConsentimientoVista:
+      type: object
+      additionalProperties: false
+      required: [scope, estado, vigente]
+      properties:
+        scope: { $ref: '#/components/schemas/ConsentimientoScope' }
+        estado: { $ref: '#/components/schemas/EstadoConsentimientoEnum' }
+        vigente: { type: boolean }
+        actualizadoEn: { type: [string, 'null'], format: date-time }
+
+    TipoDocumento:
+      type: string
+      enum: [CC, CE, PA]
+    EstadoCliente:
+      type: string
+      enum: [ACTIVO, BLOQUEADO, INACTIVO]
+    ConsentimientoScope:
+      type: string
+      enum: [OPEN_FINANCE, OPEN_DATA]
+    EstadoConsentimientoEnum:
+      type: string
+      enum: [OTORGADO, REVOCADO, NO_OTORGADO]
+
+    Problema:
+      description: Error en formato RFC 9457 (Problem Details for HTTP APIs).
+      type: object
+      properties:
+        type: { type: string, format: uri, default: 'about:blank' }
+        title: { type: string }
+        status: { type: integer, minimum: 100, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        errores:
+          type: array
+          items:
+            type: object
+            properties:
+              campo: { type: string }
+              mensaje: { type: string }
