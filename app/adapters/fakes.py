@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.domain import (
     ClienteCore,
@@ -34,9 +34,7 @@ class FakeIdentityProvider:
         return registro[0]
 
     async def eliminar(self, sub: str) -> None:
-        self._por_email = {
-            e: v for e, v in self._por_email.items() if v[0] != sub
-        }
+        self._por_email = {e: v for e, v in self._por_email.items() if v[0] != sub}
 
 
 class FakeCoreIdentity:
@@ -46,9 +44,7 @@ class FakeCoreIdentity:
         self._por_documento: set[tuple[str, str]] = set()
         self._consentimientos: dict[tuple[str, str], ConsentimientoVista] = {}
 
-    async def registrar_cliente(
-        self, identity_ref: str, datos: RegistroInput
-    ) -> ClienteCore:
+    async def registrar_cliente(self, identity_ref: str, datos: RegistroInput) -> ClienteCore:
         clave = (datos.tipo_documento, datos.numero_documento)
         if clave in self._por_documento:
             raise Conflicto("El documento ya está registrado")
@@ -81,9 +77,7 @@ class FakeCoreIdentity:
 
     async def listar_consentimientos(self, cliente_id: str) -> list[ConsentimientoVista]:
         await self.obtener_cliente(cliente_id)
-        return [
-            v for (cid, _s), v in sorted(self._consentimientos.items()) if cid == cliente_id
-        ]
+        return [v for (cid, _s), v in sorted(self._consentimientos.items()) if cid == cliente_id]
 
     async def otorgar_consentimiento(
         self, cliente_id: str, scope: str, politica_version: str, canal: str
@@ -93,7 +87,7 @@ class FakeCoreIdentity:
             scope=scope,
             estado="OTORGADO",
             vigente=True,
-            actualizado_en=datetime.now(timezone.utc),
+            actualizado_en=datetime.now(UTC),
         )
         self._consentimientos[(cliente_id, scope)] = vista
         return vista
@@ -104,5 +98,5 @@ class FakeCoreIdentity:
             scope=scope,
             estado="REVOCADO",
             vigente=False,
-            actualizado_en=datetime.now(timezone.utc),
+            actualizado_en=datetime.now(UTC),
         )

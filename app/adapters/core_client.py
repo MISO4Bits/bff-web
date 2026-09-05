@@ -23,9 +23,7 @@ class CoreClientAdapter:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def registrar_cliente(
-        self, identity_ref: str, datos: RegistroInput
-    ) -> ClienteCore:
+    async def registrar_cliente(self, identity_ref: str, datos: RegistroInput) -> ClienteCore:
         cuerpo = {
             "identityRef": identity_ref,
             "tipoDocumento": datos.tipo_documento,
@@ -58,20 +56,14 @@ class CoreClientAdapter:
         return _a_cliente(resp.json())
 
     async def buscar_cliente_por_identidad(self, identity_ref: str) -> ClienteCore:
-        resp = await self._http.request(
-            "GET", "/clientes", params={"identityRef": identity_ref}
-        )
+        resp = await self._http.request("GET", "/clientes", params={"identityRef": identity_ref})
         if resp.status_code == 404:
             raise RecursoNoEncontrado("Cliente no encontrado")
         _asegurar_ok(resp)
         return _a_cliente(resp.json())
 
-    async def listar_consentimientos(
-        self, cliente_id: str
-    ) -> list[ConsentimientoVista]:
-        resp = await self._http.request(
-            "GET", f"/clientes/{cliente_id}/consentimientos"
-        )
+    async def listar_consentimientos(self, cliente_id: str) -> list[ConsentimientoVista]:
+        resp = await self._http.request("GET", f"/clientes/{cliente_id}/consentimientos")
         if resp.status_code == 404:
             raise RecursoNoEncontrado("Cliente no encontrado")
         _asegurar_ok(resp)
@@ -93,9 +85,7 @@ class CoreClientAdapter:
         return _a_consentimiento(resp.json())
 
     async def revocar_consentimiento(self, cliente_id: str, scope: str) -> None:
-        resp = await self._http.request(
-            "DELETE", f"/clientes/{cliente_id}/consentimientos/{scope}"
-        )
+        resp = await self._http.request("DELETE", f"/clientes/{cliente_id}/consentimientos/{scope}")
         if resp.status_code == 404:
             raise RecursoNoEncontrado("Consentimiento no encontrado")
         _asegurar_ok(resp, esperado=204)

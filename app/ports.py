@@ -24,17 +24,13 @@ class IdentityProviderPort(Protocol):
 
 @runtime_checkable
 class CoreIdentityPort(Protocol):
-    async def registrar_cliente(
-        self, identity_ref: str, datos: RegistroInput
-    ) -> ClienteCore: ...
+    async def registrar_cliente(self, identity_ref: str, datos: RegistroInput) -> ClienteCore: ...
 
     async def obtener_cliente(self, cliente_id: str) -> ClienteCore: ...
 
     async def buscar_cliente_por_identidad(self, identity_ref: str) -> ClienteCore: ...
 
-    async def listar_consentimientos(
-        self, cliente_id: str
-    ) -> list[ConsentimientoVista]: ...
+    async def listar_consentimientos(self, cliente_id: str) -> list[ConsentimientoVista]: ...
 
     async def otorgar_consentimiento(
         self, cliente_id: str, scope: str, politica_version: str, canal: str

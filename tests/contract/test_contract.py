@@ -18,10 +18,7 @@ def _normalize(method: str, path: str) -> tuple[str, str]:
 
 def _spec_ops(spec: dict) -> set[tuple[str, str]]:
     return {
-        _normalize(m, p)
-        for p, item in spec["paths"].items()
-        for m in item
-        if m.lower() in _METODOS
+        _normalize(m, p) for p, item in spec["paths"].items() for m in item if m.lower() in _METODOS
     }
 
 

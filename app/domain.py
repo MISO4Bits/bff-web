@@ -59,7 +59,7 @@ class Cuenta:
     telefono: str | None = None
 
     @classmethod
-    def desde_core(cls, c: ClienteCore) -> "Cuenta":
+    def desde_core(cls, c: ClienteCore) -> Cuenta:
         return cls(
             cliente_id=c.id,
             primer_nombre=c.primer_nombre,

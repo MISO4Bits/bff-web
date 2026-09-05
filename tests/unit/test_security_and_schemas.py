@@ -44,9 +44,7 @@ def test_registro_request_invalido(override):
 
 
 def test_sesion_out_por_alias():
-    data = SesionOut(
-        access_token="a", expires_in=10, refresh_token="r"
-    ).model_dump(by_alias=True)
+    data = SesionOut(access_token="a", expires_in=10, refresh_token="r").model_dump(by_alias=True)
     assert data["accessToken"] == "a"
     assert data["tokenType"] == "Bearer"
 
@@ -69,9 +67,7 @@ def test_session_issuer_refrescar():
 
 def test_verificar_rechaza_token_de_otro_secreto():
     issuer = SessionIssuer("secreto")
-    otro = SessionIssuer("otro-secreto").emitir(
-        sub="s", cliente_id="c", email="a@b.com"
-    )
+    otro = SessionIssuer("otro-secreto").emitir(sub="s", cliente_id="c", email="a@b.com")
     with pytest.raises(NoAutorizado):
         issuer.verificar(otro.access_token)
 

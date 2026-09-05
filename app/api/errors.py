@@ -32,9 +32,7 @@ def problema(
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(BffError)
     async def _bff_error(request: Request, exc: BffError) -> JSONResponse:
-        return problema(
-            exc.status, exc.title, detail=exc.detail, instance=str(request.url)
-        )
+        return problema(exc.status, exc.title, detail=exc.detail, instance=str(request.url))
 
     @app.exception_handler(RequestValidationError)
     async def _validacion(request: Request, exc: RequestValidationError) -> JSONResponse:

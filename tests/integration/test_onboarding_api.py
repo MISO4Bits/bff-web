@@ -29,9 +29,7 @@ async def test_journey_completo(client):
     lista = await client.get("/v1/cuenta/consentimientos", headers=headers)
     assert [c["scope"] for c in lista.json()] == ["OPEN_FINANCE"]
 
-    revocar = await client.delete(
-        "/v1/cuenta/consentimientos/OPEN_FINANCE", headers=headers
-    )
+    revocar = await client.delete("/v1/cuenta/consentimientos/OPEN_FINANCE", headers=headers)
     assert revocar.status_code == 204
 
     lista = await client.get("/v1/cuenta/consentimientos", headers=headers)
@@ -91,9 +89,7 @@ async def test_token_valido_pero_cliente_inexistente_devuelve_404(client):
         "test-secret",
         algorithm="HS256",
     )
-    resp = await client.get(
-        "/v1/cuenta", headers={"Authorization": f"Bearer {token}"}
-    )
+    resp = await client.get("/v1/cuenta", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 404
 
 

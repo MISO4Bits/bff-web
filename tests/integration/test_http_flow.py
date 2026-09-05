@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 import pytest_asyncio
 import respx
 from httpx import ASGITransport, AsyncClient

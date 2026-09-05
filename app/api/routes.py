@@ -68,17 +68,13 @@ async def registrarse(payload: RegistroRequest, service: ServiceDep) -> Registro
 
 
 @router.post("/sesiones", response_model=SesionOut, tags=["Sesión"])
-async def iniciar_sesion(
-    payload: CredencialesRequest, service: ServiceDep
-) -> SesionOut:
+async def iniciar_sesion(payload: CredencialesRequest, service: ServiceDep) -> SesionOut:
     sesion = await service.iniciar_sesion(payload.email, payload.password)
     return SesionOut.model_validate(sesion)
 
 
 @router.post("/sesiones/refresco", response_model=SesionOut, tags=["Sesión"])
-async def refrescar_sesion(
-    payload: RefrescoRequest, service: ServiceDep
-) -> SesionOut:
+async def refrescar_sesion(payload: RefrescoRequest, service: ServiceDep) -> SesionOut:
     return SesionOut.model_validate(service.refrescar(payload.refresh_token))
 
 
@@ -122,8 +118,6 @@ async def otorgar_mi_consentimiento(
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["Consentimientos"],
 )
-async def revocar_mi_consentimiento(
-    scope: str, claims: ClaimsDep, service: ServiceDep
-) -> Response:
+async def revocar_mi_consentimiento(scope: str, claims: ClaimsDep, service: ServiceDep) -> Response:
     await service.revocar_consentimiento(claims.cliente_id, scope)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

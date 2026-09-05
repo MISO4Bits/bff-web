@@ -28,9 +28,13 @@ class SessionIssuer:
     def emitir(self, *, sub: str, cliente_id: str, email: str) -> Sesion:
         ahora = int(time.time())
         base = {"sub": sub, "clienteId": cliente_id, "email": email, "iat": ahora}
-        access = jwt.encode({**base, "typ": "access", "exp": ahora + self._ttl}, self._secret, algorithm=_ALG)
+        access = jwt.encode(
+            {**base, "typ": "access", "exp": ahora + self._ttl}, self._secret, algorithm=_ALG
+        )
         refresh = jwt.encode(
-            {**base, "typ": "refresh", "exp": ahora + self._refresh_ttl}, self._secret, algorithm=_ALG
+            {**base, "typ": "refresh", "exp": ahora + self._refresh_ttl},
+            self._secret,
+            algorithm=_ALG,
         )
         return Sesion(access_token=access, refresh_token=refresh, expires_in=self._ttl)
 
@@ -47,9 +51,7 @@ class SessionIssuer:
 
     def verificar(self, token: str) -> Claims:
         payload = self._decodificar(token, tipo="access")
-        return Claims(
-            sub=payload["sub"], cliente_id=payload["clienteId"], email=payload["email"]
-        )
+        return Claims(sub=payload["sub"], cliente_id=payload["clienteId"], email=payload["email"])
 
     def refrescar(self, refresh_token: str) -> Sesion:
         payload = self._decodificar(refresh_token, tipo="refresh")

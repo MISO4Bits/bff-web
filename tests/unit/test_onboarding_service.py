@@ -106,9 +106,7 @@ async def test_refrescar(service):
 async def test_consentimientos_via_service(service):
     cuenta, _ = await service.registrar(DATOS)
 
-    otorgado = await service.otorgar_consentimiento(
-        cuenta.cliente_id, "OPEN_FINANCE", "v1"
-    )
+    otorgado = await service.otorgar_consentimiento(cuenta.cliente_id, "OPEN_FINANCE", "v1")
     assert otorgado.vigente is True
 
     listado = await service.listar_consentimientos(cuenta.cliente_id)

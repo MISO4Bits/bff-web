@@ -38,9 +38,7 @@ class OnboardingService:
             await self._compensar(sub)
             raise
 
-        sesion = self._sessions.emitir(
-            sub=sub, cliente_id=cliente.id, email=cliente.email
-        )
+        sesion = self._sessions.emitir(sub=sub, cliente_id=cliente.id, email=cliente.email)
         return Cuenta.desde_core(cliente), sesion
 
     async def _compensar(self, sub: str) -> None:
@@ -52,9 +50,7 @@ class OnboardingService:
     async def iniciar_sesion(self, email: str, password: str) -> Sesion:
         sub = await self._identity.autenticar(email, password)
         cliente = await self._core.buscar_cliente_por_identidad(sub)
-        return self._sessions.emitir(
-            sub=sub, cliente_id=cliente.id, email=cliente.email
-        )
+        return self._sessions.emitir(sub=sub, cliente_id=cliente.id, email=cliente.email)
 
     def refrescar(self, refresh_token: str) -> Sesion:
         return self._sessions.refrescar(refresh_token)
@@ -66,12 +62,8 @@ class OnboardingService:
     async def listar_consentimientos(self, cliente_id: str):
         return await self._core.listar_consentimientos(cliente_id)
 
-    async def otorgar_consentimiento(
-        self, cliente_id: str, scope: str, politica_version: str
-    ):
-        return await self._core.otorgar_consentimiento(
-            cliente_id, scope, politica_version, "WEB"
-        )
+    async def otorgar_consentimiento(self, cliente_id: str, scope: str, politica_version: str):
+        return await self._core.otorgar_consentimiento(cliente_id, scope, politica_version, "WEB")
 
     async def revocar_consentimiento(self, cliente_id: str, scope: str) -> None:
         await self._core.revocar_consentimiento(cliente_id, scope)
