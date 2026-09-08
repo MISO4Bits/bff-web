@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Credenciales y secretos (nunca versionar) ---
+*.pem
+*.p12
+*.key
+*-key.json
+*_key.json
+credentials.json
+sa-*.json
+gha-creds-*.json
+.env.*
+!.env.example
