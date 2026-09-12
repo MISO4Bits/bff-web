@@ -8,7 +8,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Configuración por variables de entorno (prefijo ``BFF_``)."""
 
-    model_config = SettingsConfigDict(env_prefix="BFF_", env_file=".env", extra="ignore")
+    # secrets_dir: lee valores montados como archivo (p. ej. por el add-on de
+    # Secret Manager de GKE vía CSI) — el nombre de archivo esperado sigue la
+    # misma regla que las variables de entorno, con el prefijo BFF_ incluido
+    # (ej. BFF_IDENTITY_API_KEY). Si el directorio no existe (local, tests),
+    # pydantic-settings solo emite una advertencia, no falla.
+    model_config = SettingsConfigDict(
+        env_prefix="BFF_", env_file=".env", secrets_dir="/var/secrets", extra="ignore"
+    )
 
     service_name: str = "bff-web"
     environment: str = "local"
