@@ -25,6 +25,21 @@ servers:
   - url: https://api.dev.solventa4bits.com/web
     description: Entorno de desarrollo
 
+# Backend real al que API Gateway reenvía cada llamada — la IP fija +
+# certificado gestionado de iac-gcp-dev/persistent/, nunca la IP efímera
+# del Gateway de Kubernetes (esa cambia en cada terraform apply/destroy).
+# disableAuth se deja explícito en false (aunque sea el default) porque la
+# config de API Gateway exige que el backend declare jwtAudience o
+# disableAuth — con esto, API Gateway adjunta automáticamente un ID token
+# firmado por Google con audiencia = address; queda pendiente que bff-web
+# lo valide (ver hallazgo de seguridad en memoria del proyecto).
+x-google-api-management:
+  backends:
+    bff-web:
+      address: https://bff-web.dev.solventa4bits.com
+      disableAuth: false
+x-google-backend: bff-web
+
 tags:
   - name: Registro
     description: Alta de una persona en la plataforma.
