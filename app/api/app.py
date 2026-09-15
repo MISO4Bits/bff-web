@@ -22,7 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     logging.basicConfig(level=logging.INFO)
 
     deps = build_dependencias(settings)
-    service = OnboardingService(deps.identity, deps.core, deps.sessions)
+    service = OnboardingService(deps.identity, deps.core, deps.cotizacion, deps.sessions)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):

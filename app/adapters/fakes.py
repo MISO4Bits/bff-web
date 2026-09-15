@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from app.domain import (
     ClienteCore,
     Conflicto,
     ConsentimientoVista,
+    Cotizacion,
+    CotizacionInput,
     NoAutorizado,
+    Oferta,
     RecursoNoEncontrado,
     RegistroInput,
+    Vigencia,
 )
 
 
@@ -100,3 +105,42 @@ class FakeCoreIdentity:
             vigente=False,
             actualizado_en=datetime.now(UTC),
         )
+
+
+class FakeCotizacion:
+    """Rating simplificado, sin llamar a Perfilamiento — solo para modo standalone/pruebas."""
+
+    _TASA_MENSUAL = Decimal("0.0005")
+    _VIGENCIA = timedelta(days=30)
+
+    def __init__(self) -> None:
+        self._cotizaciones: dict[str, Cotizacion] = {}
+
+    async def crear_cotizacion(self, cliente_id: str, entrada: CotizacionInput) -> Cotizacion:
+        saldo = entrada.datos_credito.saldo_insoluto
+        prima = float((saldo * self._TASA_MENSUAL).quantize(Decimal("1")))
+        ahora = datetime.now(UTC)
+        cotizacion = Cotizacion(
+            id=str(uuid.uuid4()),
+            estado="VIGENTE",
+            producto="VIDA_HIPOTECARIO",
+            oferta=Oferta(
+                prima_mensual=prima,
+                prima_base_mensual=prima,
+                suma_asegurada=float(saldo),
+                cobertura_meses=entrada.datos_credito.plazo_meses,
+                moneda="COP",
+                personalizado=False,
+                fuentes_no_disponibles=("perfilamiento",),
+            ),
+            vigencia_cotizacion=Vigencia(desde=ahora, hasta=ahora + self._VIGENCIA),
+            creada_en=ahora,
+        )
+        self._cotizaciones[cotizacion.id] = cotizacion
+        return cotizacion
+
+    async def obtener_cotizacion(self, cliente_id: str, cotizacion_id: str) -> Cotizacion:
+        cotizacion = self._cotizaciones.get(cotizacion_id)
+        if cotizacion is None:
+            raise RecursoNoEncontrado("Cotización no encontrada")
+        return cotizacion

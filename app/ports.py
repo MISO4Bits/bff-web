@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from app.domain import ClienteCore, ConsentimientoVista, RegistroInput
+from app.domain import ClienteCore, ConsentimientoVista, Cotizacion, CotizacionInput, RegistroInput
 
 
 @runtime_checkable
@@ -37,3 +37,10 @@ class CoreIdentityPort(Protocol):
     ) -> ConsentimientoVista: ...
 
     async def revocar_consentimiento(self, cliente_id: str, scope: str) -> None: ...
+
+
+@runtime_checkable
+class CotizacionPort(Protocol):
+    async def crear_cotizacion(self, cliente_id: str, entrada: CotizacionInput) -> Cotizacion: ...
+
+    async def obtener_cotizacion(self, cliente_id: str, cotizacion_id: str) -> Cotizacion: ...

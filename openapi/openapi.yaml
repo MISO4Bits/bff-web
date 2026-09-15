@@ -7,8 +7,9 @@ info:
     Backend for Frontend del cliente web. Orquesta el *journey de originación*.
 
     Alcance de esta versión (`0.1.x`): **registro de cliente** (identidad + alta en
-    CoreTransaccional) y el paso de **consentimientos**. Los pasos de cotización y
-    perfilamiento se agregan en versiones posteriores.
+    CoreTransaccional), el paso de **consentimientos** y **cotización** (orquesta
+    hacia Cotización y Rating; EXP-01, BITS-81). El paso de perfilamiento propio
+    del BFF se agrega en versiones posteriores.
 
     Entrada real: `Cliente Web → Cloud LB → Cloud Armor (WAF) → API Gateway → BFF Web`.
     El API Gateway valida firma y expiración del token; el BFF valida identidad de
@@ -22,7 +23,7 @@ info:
     name: Uso académico 4Bits
 
 servers:
-  - url: https://api.dev.solventa4bits.com/web
+  - url: https://dev.solventa4bits.com/web
     description: Entorno de desarrollo
 
 tags:
@@ -34,6 +35,8 @@ tags:
     description: Datos del cliente autenticado.
   - name: Consentimientos
     description: Consentimientos del cliente autenticado.
+  - name: Cotización
+    description: Cotización de seguro de vida sobre crédito hipotecario (orquesta hacia Cotización y Rating).
 
 security:
   - clienteAuth: []
@@ -177,6 +180,52 @@ paths:
         '401': { $ref: '#/components/responses/NoAutorizado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
 
+  /v1/cotizaciones:
+    post:
+      operationId: crearCotizacion
+      tags: [Cotización]
+      summary: Cotiza un seguro de vida sobre crédito hipotecario
+      description: |
+        Reenvía la solicitud a Cotización y Rating (EXP-01, BITS-81) usando el
+        `clienteId` de la sesión autenticada — el cliente no puede cotizar en
+        nombre de otro. Cotización y Rating intenta perfilar el riesgo; si esa
+        dependencia no responde, cae a tarifa estándar (`personalizado: false`)
+        en vez de fallar la cotización completa.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CotizacionRequest' }
+      responses:
+        '201':
+          description: Cotización creada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cotizacion' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '422': { $ref: '#/components/responses/EntidadNoProcesable' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
+
+  /v1/cotizaciones/{cotizacionId}:
+    parameters:
+      - name: cotizacionId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: obtenerCotizacion
+      tags: [Cotización]
+      summary: Consulta una cotización propia
+      responses:
+        '200':
+          description: Cotización encontrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cotizacion' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
 components:
 
   securitySchemes:
@@ -306,6 +355,93 @@ components:
         estado: { $ref: '#/components/schemas/EstadoConsentimientoEnum' }
         vigente: { type: boolean }
         actualizadoEn: { type: [string, 'null'], format: date-time }
+
+    DatosCredito:
+      type: object
+      additionalProperties: false
+      required: [valorCredito, plazoMeses, edad, entidadAcreedora, saldoInsoluto]
+      properties:
+        valorCredito: { type: number, minimum: 10000000 }
+        plazoMeses: { type: integer, minimum: 12, maximum: 480 }
+        edad: { type: integer, minimum: 18, maximum: 65 }
+        entidadAcreedora: { type: string, minLength: 2, maxLength: 80 }
+        saldoInsoluto: { type: number, exclusiveMinimum: 0 }
+
+    CuestionarioHabitos:
+      type: object
+      additionalProperties: false
+      required: [consumeTabaco, actividadFisica, condicionesPreexistentes, dependientesEconomicos]
+      properties:
+        consumeTabaco: { type: boolean }
+        actividadFisica: { type: string, enum: [NUNCA, OCASIONAL, REGULAR] }
+        condicionesPreexistentes: { type: boolean }
+        dependientesEconomicos: { type: integer, minimum: 0, maximum: 20 }
+
+    CotizacionRequest:
+      type: object
+      additionalProperties: false
+      required: [datosCredito, cuestionarioHabitos]
+      properties:
+        datosCredito: { $ref: '#/components/schemas/DatosCredito' }
+        cuestionarioHabitos: { $ref: '#/components/schemas/CuestionarioHabitos' }
+
+    FactorRiesgo:
+      type: object
+      additionalProperties: false
+      required: [descripcion, efecto]
+      properties:
+        descripcion: { type: string }
+        efecto: { type: string, enum: [POSITIVO, NEGATIVO] }
+        pesoRelativo: { type: [number, 'null'] }
+
+    PerfilRiesgo:
+      type: object
+      additionalProperties: false
+      required: [nivelRiesgo, factores]
+      properties:
+        nivelRiesgo: { type: string, enum: [BAJO, MEDIO, ALTO] }
+        factores:
+          type: array
+          items: { $ref: '#/components/schemas/FactorRiesgo' }
+
+    Oferta:
+      type: object
+      additionalProperties: false
+      required: [primaMensual, primaBaseMensual, sumaAsegurada, coberturaMeses, moneda, personalizado]
+      properties:
+        primaMensual: { type: number }
+        primaBaseMensual: { type: number }
+        sumaAsegurada: { type: number }
+        coberturaMeses: { type: integer }
+        moneda: { type: string, const: COP }
+        personalizado: { type: boolean }
+        fuentesNoDisponibles:
+          type: array
+          items: { type: string }
+
+    Vigencia:
+      type: object
+      additionalProperties: false
+      required: [desde, hasta]
+      properties:
+        desde: { type: string, format: date-time }
+        hasta: { type: string, format: date-time }
+
+    Cotizacion:
+      type: object
+      additionalProperties: false
+      required: [id, estado, producto, oferta, vigenciaCotizacion, creadaEn]
+      properties:
+        id: { type: string }
+        estado: { type: string, enum: [VIGENTE, EXPIRADA] }
+        producto: { type: string, const: VIDA_HIPOTECARIO }
+        oferta: { $ref: '#/components/schemas/Oferta' }
+        perfilRiesgo:
+          oneOf:
+            - { $ref: '#/components/schemas/PerfilRiesgo' }
+            - type: 'null'
+        vigenciaCotizacion: { $ref: '#/components/schemas/Vigencia' }
+        creadaEn: { type: string, format: date-time }
 
     TipoDocumento:
       type: string
