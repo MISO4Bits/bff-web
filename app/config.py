@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     session_ttl_seconds: int = 3600
     refresh_ttl_seconds: int = 86400
 
+    # Observabilidad (DI-008): OTLP/gRPC hacia Grafana Alloy dentro del
+    # cluster. Deshabilitado por defecto — en local/tests no hay receptor
+    # escuchando; se habilita vía BFF_OTEL_ENABLED=true en el manifiesto de
+    # despliegue.
+    otel_enabled: bool = False
+    otel_exporter_endpoint: str = (
+        "k8s-monitoring-alloy-receiver.observability.svc.cluster.local:4317"
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
