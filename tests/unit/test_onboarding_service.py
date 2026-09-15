@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
-from app.adapters.fakes import FakeCoreIdentity, FakeIdentityProvider
+from app.adapters.fakes import FakeCoreIdentity, FakeCotizacion, FakeIdentityProvider
 from app.domain import (
     ClienteCore,
     Conflicto,
+    CotizacionInput,
+    CuestionarioHabitosInput,
+    DatosCreditoInput,
     DependenciaNoDisponible,
     NoAutorizado,
     RegistroInput,
@@ -38,8 +42,13 @@ def core() -> FakeCoreIdentity:
 
 
 @pytest.fixture
-def service(identity, core) -> OnboardingService:
-    return OnboardingService(identity, core, SessionIssuer("secreto"))
+def cotizacion() -> FakeCotizacion:
+    return FakeCotizacion()
+
+
+@pytest.fixture
+def service(identity, core, cotizacion) -> OnboardingService:
+    return OnboardingService(identity, core, cotizacion, SessionIssuer("secreto"))
 
 
 async def test_registrar_devuelve_cuenta_y_sesion(service):
@@ -64,7 +73,7 @@ async def test_registrar_compensa_si_core_falla(identity, core):
         raise DependenciaNoDisponible("core caído")
 
     core.registrar_cliente = _boom  # type: ignore[assignment]
-    service = OnboardingService(identity, core, SessionIssuer("secreto"))
+    service = OnboardingService(identity, core, FakeCotizacion(), SessionIssuer("secreto"))
 
     with pytest.raises(DependenciaNoDisponible):
         await service.registrar(DATOS)
@@ -78,7 +87,7 @@ async def test_registrar_compensa_ante_error_inesperado(identity, core):
         raise RuntimeError("inesperado")
 
     core.registrar_cliente = _boom  # type: ignore[assignment]
-    service = OnboardingService(identity, core, SessionIssuer("secreto"))
+    service = OnboardingService(identity, core, FakeCotizacion(), SessionIssuer("secreto"))
 
     with pytest.raises(RuntimeError):
         await service.registrar(DATOS)
@@ -127,7 +136,7 @@ async def test_iniciar_sesion_sin_cliente_en_core(identity, core):
     """Credencial válida pero sin cliente asociado en core -> RecursoNoEncontrado."""
     from app.domain import RecursoNoEncontrado
 
-    service = OnboardingService(identity, core, SessionIssuer("s"))
+    service = OnboardingService(identity, core, FakeCotizacion(), SessionIssuer("s"))
     await identity.registrar(DATOS.email, DATOS.password)
     with pytest.raises(RecursoNoEncontrado):
         await service.iniciar_sesion(DATOS.email, DATOS.password)
@@ -158,11 +167,50 @@ async def test_compensacion_tolera_fallo_al_revertir(identity, core, caplog):
 
     core.registrar_cliente = _boom_core  # type: ignore[assignment]
     identity.eliminar = _boom_delete  # type: ignore[assignment]
-    service = OnboardingService(identity, core, SessionIssuer("s"))
+    service = OnboardingService(identity, core, FakeCotizacion(), SessionIssuer("s"))
 
     with pytest.raises(Conflicto):
         await service.registrar(DATOS)
     assert "no se pudo revertir" in caplog.text
+
+
+ENTRADA_COTIZACION = CotizacionInput(
+    datos_credito=DatosCreditoInput(
+        valor_credito=Decimal("120000000"),
+        plazo_meses=120,
+        edad=35,
+        entidad_acreedora="Banco Solventa",
+        saldo_insoluto=Decimal("100000000"),
+    ),
+    cuestionario_habitos=CuestionarioHabitosInput(
+        consume_tabaco=False,
+        actividad_fisica="REGULAR",
+        condiciones_preexistentes=False,
+        dependientes_economicos=1,
+    ),
+)
+
+
+async def test_crear_cotizacion_via_service(service):
+    cotizacion = await service.crear_cotizacion("cliente-1", ENTRADA_COTIZACION)
+
+    assert cotizacion.id
+    assert cotizacion.estado == "VIGENTE"
+    assert cotizacion.oferta.prima_mensual > 0
+    assert cotizacion.oferta.personalizado is False  # FakeCotizacion no perfila
+
+
+async def test_obtener_cotizacion_via_service(service):
+    creada = await service.crear_cotizacion("cliente-1", ENTRADA_COTIZACION)
+    obtenida = await service.obtener_cotizacion("cliente-1", creada.id)
+    assert obtenida.id == creada.id
+
+
+async def test_obtener_cotizacion_inexistente(service):
+    from app.domain import RecursoNoEncontrado
+
+    with pytest.raises(RecursoNoEncontrado):
+        await service.obtener_cotizacion("cliente-1", "no-existe")
 
 
 def test_cuenta_desde_core_mapea_campos():

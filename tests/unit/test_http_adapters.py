@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import httpx
 import pytest
 import respx
 
 from app.adapters.core_client import CoreClientAdapter
+from app.adapters.cotizacion_client import CotizacionClientAdapter
 from app.adapters.factory import build_dependencias
 from app.adapters.identity_platform import IdentityPlatformAdapter
 from app.config import Settings
 from app.domain import (
     BffError,
     Conflicto,
+    CotizacionInput,
+    CuestionarioHabitosInput,
+    DatosCreditoInput,
     NoAutorizado,
     RecursoNoEncontrado,
     RegistroInput,
@@ -22,6 +27,23 @@ from app.resilience import ResilientHttpClient, build_breaker
 
 IDP = "http://idp.local"
 CORE = "http://core.local"
+COTIZACION = "http://cotizacion.local"
+
+ENTRADA_COTIZACION = CotizacionInput(
+    datos_credito=DatosCreditoInput(
+        valor_credito=Decimal("120000000"),
+        plazo_meses=120,
+        edad=35,
+        entidad_acreedora="Banco Solventa",
+        saldo_insoluto=Decimal("100000000"),
+    ),
+    cuestionario_habitos=CuestionarioHabitosInput(
+        consume_tabaco=False,
+        actividad_fisica="REGULAR",
+        condiciones_preexistentes=False,
+        dependientes_economicos=1,
+    ),
+)
 
 DATOS = RegistroInput(
     email="ana@example.com",
@@ -47,6 +69,40 @@ def _core() -> CoreClientAdapter:
         CORE, breaker=build_breaker("core", fail_max=9, reset_timeout=5), timeout=0.3, retries=0
     )
     return CoreClientAdapter(http)
+
+
+def _cotizacion() -> CotizacionClientAdapter:
+    http = ResilientHttpClient(
+        COTIZACION,
+        breaker=build_breaker("cotizacion", fail_max=9, reset_timeout=5),
+        timeout=0.3,
+        retries=0,
+    )
+    return CotizacionClientAdapter(http)
+
+
+def _cotizacion_json(**overrides) -> dict:
+    base = {
+        "id": "cot-1",
+        "estado": "VIGENTE",
+        "producto": "VIDA_HIPOTECARIO",
+        "oferta": {
+            "primaMensual": 45000.0,
+            "primaBaseMensual": 45000.0,
+            "sumaAsegurada": 100000000.0,
+            "coberturaMeses": 120,
+            "moneda": "COP",
+            "personalizado": False,
+            "fuentesNoDisponibles": ["perfilamiento"],
+        },
+        "vigenciaCotizacion": {
+            "desde": "2026-09-13T00:00:00Z",
+            "hasta": "2026-10-13T00:00:00Z",
+        },
+        "creadaEn": "2026-09-13T00:00:00Z",
+    }
+    base.update(overrides)
+    return base
 
 
 @respx.mock
@@ -242,11 +298,109 @@ async def test_core_buscar_por_identidad():
 async def test_factory_fake_y_http_y_error():
     fake = build_dependencias(Settings(adapters="fake"))
     assert type(fake.identity).__name__ == "FakeIdentityProvider"
+    assert type(fake.cotizacion).__name__ == "FakeCotizacion"
     await fake.aclose()
 
     http = build_dependencias(Settings(adapters="http"))
     assert type(http.core).__name__ == "CoreClientAdapter"
+    assert type(http.cotizacion).__name__ == "CotizacionClientAdapter"
     await http.aclose()
 
     with pytest.raises(ValueError):
         build_dependencias(Settings(adapters="otro"))
+
+
+@respx.mock
+async def test_cotizacion_crear_ok_envia_cliente_id_y_decimales_como_texto():
+    ruta = respx.post(f"{COTIZACION}/cotizaciones").mock(
+        return_value=httpx.Response(201, json=_cotizacion_json())
+    )
+    adapter = _cotizacion()
+    try:
+        cotizacion = await adapter.crear_cotizacion("cliente-1", ENTRADA_COTIZACION)
+        assert cotizacion.id == "cot-1"
+        assert cotizacion.oferta.prima_mensual == 45000.0
+        assert cotizacion.perfil_riesgo is None
+
+        enviado = ruta.calls.last.request
+        assert enviado.headers["x-cliente-id"] == "cliente-1"
+        import json as _json
+
+        cuerpo = _json.loads(enviado.content)
+        assert cuerpo["datosCredito"]["valorCredito"] == "120000000"
+        assert cuerpo["datosCredito"]["saldoInsoluto"] == "100000000"
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_cotizacion_crear_con_perfil_riesgo():
+    payload = _cotizacion_json(
+        oferta={
+            "primaMensual": 63000.0,
+            "primaBaseMensual": 45000.0,
+            "sumaAsegurada": 100000000.0,
+            "coberturaMeses": 120,
+            "moneda": "COP",
+            "personalizado": True,
+            "fuentesNoDisponibles": [],
+        },
+        perfilRiesgo={
+            "nivelRiesgo": "ALTO",
+            "factores": [
+                {"descripcion": "fumador", "efecto": "NEGATIVO", "pesoRelativo": 0.4},
+            ],
+        },
+    )
+    respx.post(f"{COTIZACION}/cotizaciones").mock(return_value=httpx.Response(201, json=payload))
+    adapter = _cotizacion()
+    try:
+        cotizacion = await adapter.crear_cotizacion("cliente-1", ENTRADA_COTIZACION)
+        assert cotizacion.oferta.personalizado is True
+        assert cotizacion.perfil_riesgo.nivel_riesgo == "ALTO"
+        assert cotizacion.perfil_riesgo.factores[0].descripcion == "fumador"
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_cotizacion_crear_solicitud_invalida():
+    respx.post(f"{COTIZACION}/cotizaciones").mock(
+        return_value=httpx.Response(422, json={"detail": "regla de negocio"})
+    )
+    adapter = _cotizacion()
+    try:
+        with pytest.raises(SolicitudInvalida):
+            await adapter.crear_cotizacion("cliente-1", ENTRADA_COTIZACION)
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_cotizacion_obtener_ok_y_404():
+    respx.get(f"{COTIZACION}/cotizaciones/cot-1").mock(
+        return_value=httpx.Response(200, json=_cotizacion_json())
+    )
+    adapter = _cotizacion()
+    try:
+        cotizacion = await adapter.obtener_cotizacion("cliente-1", "cot-1")
+        assert cotizacion.id == "cot-1"
+
+        respx.get(f"{COTIZACION}/cotizaciones/no-existe").mock(
+            return_value=httpx.Response(404, json={})
+        )
+        with pytest.raises(RecursoNoEncontrado):
+            await adapter.obtener_cotizacion("cliente-1", "no-existe")
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_cotizacion_error_5xx():
+    respx.get(f"{COTIZACION}/cotizaciones/cot-1").mock(return_value=httpx.Response(500, json={}))
+    adapter = _cotizacion()
+    try:
+        with pytest.raises(BffError):
+            await adapter.obtener_cotizacion("cliente-1", "cot-1")
+    finally:
+        await adapter.aclose()

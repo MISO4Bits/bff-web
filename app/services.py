@@ -6,11 +6,13 @@ import logging
 
 from app.domain import (
     BffError,
+    Cotizacion,
+    CotizacionInput,
     Cuenta,
     RegistroInput,
     Sesion,
 )
-from app.ports import CoreIdentityPort, IdentityProviderPort
+from app.ports import CoreIdentityPort, CotizacionPort, IdentityProviderPort
 from app.security import SessionIssuer
 
 logger = logging.getLogger("bff_web.onboarding")
@@ -21,10 +23,12 @@ class OnboardingService:
         self,
         identity: IdentityProviderPort,
         core: CoreIdentityPort,
+        cotizacion: CotizacionPort,
         sessions: SessionIssuer,
     ) -> None:
         self._identity = identity
         self._core = core
+        self._cotizacion = cotizacion
         self._sessions = sessions
 
     async def registrar(self, datos: RegistroInput) -> tuple[Cuenta, Sesion]:
@@ -67,3 +71,9 @@ class OnboardingService:
 
     async def revocar_consentimiento(self, cliente_id: str, scope: str) -> None:
         await self._core.revocar_consentimiento(cliente_id, scope)
+
+    async def crear_cotizacion(self, cliente_id: str, entrada: CotizacionInput) -> Cotizacion:
+        return await self._cotizacion.crear_cotizacion(cliente_id, entrada)
+
+    async def obtener_cotizacion(self, cliente_id: str, cotizacion_id: str) -> Cotizacion:
+        return await self._cotizacion.obtener_cotizacion(cliente_id, cotizacion_id)
