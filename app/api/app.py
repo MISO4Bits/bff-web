@@ -12,6 +12,7 @@ from app.api.errors import install_error_handlers
 from app.api.routes import router
 from app.config import Settings, get_settings
 from app.services import OnboardingService
+from app.telemetry import setup_telemetry, shutdown_telemetry
 
 SPEC_PATH = Path(__file__).resolve().parents[2] / "openapi" / "openapi.yaml"
 
@@ -27,8 +28,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI):
         yield
         await deps.aclose()
+        shutdown_telemetry(telemetry)
 
     app = FastAPI(title="BFF Web — Onboarding", version="0.1.0", lifespan=lifespan)
+    telemetry = setup_telemetry(app, settings)
     app.state.settings = settings
     app.state.deps = deps
     app.state.service = service
