@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, Header, Request, Response, status
 
 from app.api.schemas import (
     ConsentimientoVistaOut,
+    CotizacionOut,
+    CotizacionRequest,
     CredencialesRequest,
     CuentaOut,
     OtorgarConsentimientoRequest,
@@ -14,7 +16,14 @@ from app.api.schemas import (
     RegistroResponse,
     SesionOut,
 )
-from app.domain import Claims, NoAutorizado, RegistroInput
+from app.domain import (
+    Claims,
+    CotizacionInput,
+    CuestionarioHabitosInput,
+    DatosCreditoInput,
+    NoAutorizado,
+    RegistroInput,
+)
 from app.services import OnboardingService
 
 router = APIRouter(prefix="/v1")
@@ -121,3 +130,54 @@ async def otorgar_mi_consentimiento(
 async def revocar_mi_consentimiento(scope: str, claims: ClaimsDep, service: ServiceDep) -> Response:
     await service.revocar_consentimiento(claims.cliente_id, scope)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _a_dominio_cotizacion(payload: CotizacionRequest) -> CotizacionInput:
+    dc = payload.datos_credito
+    q = payload.cuestionario_habitos
+    return CotizacionInput(
+        datos_credito=DatosCreditoInput(
+            valor_credito=dc.valor_credito,
+            plazo_meses=dc.plazo_meses,
+            edad=dc.edad,
+            entidad_acreedora=dc.entidad_acreedora,
+            saldo_insoluto=dc.saldo_insoluto,
+        ),
+        cuestionario_habitos=CuestionarioHabitosInput(
+            consume_tabaco=q.consume_tabaco,
+            actividad_fisica=q.actividad_fisica,
+            condiciones_preexistentes=q.condiciones_preexistentes,
+            dependientes_economicos=q.dependientes_economicos,
+        ),
+    )
+
+
+@router.post(
+    "/cotizaciones",
+    response_model=CotizacionOut,
+    response_model_exclude_none=True,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Cotización"],
+)
+async def crear_cotizacion(
+    payload: CotizacionRequest,
+    claims: ClaimsDep,
+    service: ServiceDep,
+) -> CotizacionOut:
+    cotizacion = await service.crear_cotizacion(claims.cliente_id, _a_dominio_cotizacion(payload))
+    return CotizacionOut.model_validate(cotizacion)
+
+
+@router.get(
+    "/cotizaciones/{cotizacion_id}",
+    response_model=CotizacionOut,
+    response_model_exclude_none=True,
+    tags=["Cotización"],
+)
+async def obtener_cotizacion(
+    cotizacion_id: str,
+    claims: ClaimsDep,
+    service: ServiceDep,
+) -> CotizacionOut:
+    cotizacion = await service.obtener_cotizacion(claims.cliente_id, cotizacion_id)
+    return CotizacionOut.model_validate(cotizacion)

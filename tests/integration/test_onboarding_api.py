@@ -4,6 +4,22 @@ from __future__ import annotations
 
 from tests.conftest import REGISTRO_VALIDO
 
+SOLICITUD_COTIZACION = {
+    "datosCredito": {
+        "valorCredito": 120000000,
+        "plazoMeses": 120,
+        "edad": 35,
+        "entidadAcreedora": "Banco Solventa",
+        "saldoInsoluto": 100000000,
+    },
+    "cuestionarioHabitos": {
+        "consumeTabaco": False,
+        "actividadFisica": "REGULAR",
+        "condicionesPreexistentes": False,
+        "dependientesEconomicos": 1,
+    },
+}
+
 
 async def test_journey_completo(client):
     registro = await client.post("/v1/registro", json=REGISTRO_VALIDO)
@@ -96,3 +112,29 @@ async def test_token_valido_pero_cliente_inexistente_devuelve_404(client):
 async def test_health(client):
     resp = await client.get("/health")
     assert resp.json()["status"] == "ok"
+
+
+async def test_journey_cotizacion(cliente_autenticado):
+    client, headers = cliente_autenticado
+
+    creada = await client.post("/v1/cotizaciones", headers=headers, json=SOLICITUD_COTIZACION)
+    assert creada.status_code == 201
+    cuerpo = creada.json()
+    assert cuerpo["estado"] == "VIGENTE"
+    assert cuerpo["producto"] == "VIDA_HIPOTECARIO"
+    assert cuerpo["oferta"]["primaMensual"] > 0
+
+    obtenida = await client.get(f"/v1/cotizaciones/{cuerpo['id']}", headers=headers)
+    assert obtenida.status_code == 200
+    assert obtenida.json()["id"] == cuerpo["id"]
+
+
+async def test_cotizacion_sin_token_devuelve_401(client):
+    resp = await client.post("/v1/cotizaciones", json=SOLICITUD_COTIZACION)
+    assert resp.status_code == 401
+
+
+async def test_cotizacion_inexistente_devuelve_404(cliente_autenticado):
+    client, headers = cliente_autenticado
+    resp = await client.get("/v1/cotizaciones/no-existe", headers=headers)
+    assert resp.status_code == 404

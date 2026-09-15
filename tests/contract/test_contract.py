@@ -71,6 +71,25 @@ async def test_respuestas_cumplen_el_contrato(client, openapi_spec):
     for item in lista.json():
         _validar(openapi_spec, "ConsentimientoVista", item)
 
+    solicitud_cotizacion = {
+        "datosCredito": {
+            "valorCredito": 120000000,
+            "plazoMeses": 120,
+            "edad": 35,
+            "entidadAcreedora": "Banco Solventa",
+            "saldoInsoluto": 100000000,
+        },
+        "cuestionarioHabitos": {
+            "consumeTabaco": False,
+            "actividadFisica": "REGULAR",
+            "condicionesPreexistentes": False,
+            "dependientesEconomicos": 1,
+        },
+    }
+    cotizacion = await client.post("/v1/cotizaciones", headers=headers, json=solicitud_cotizacion)
+    assert cotizacion.status_code == 201
+    _validar(openapi_spec, "Cotizacion", cotizacion.json())
+
 
 async def test_errores_cumplen_problem_details(client, openapi_spec):
     sin_token = await client.get("/v1/cuenta")
