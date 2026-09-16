@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.domain import BffError
+from app.logging_utils import sanear_para_log
 
 logger = logging.getLogger("bff_web.api")
 PROBLEM_MEDIA_TYPE = "application/problem+json"
@@ -35,7 +36,13 @@ def problema(
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(BffError)
     async def _bff_error(request: Request, exc: BffError) -> JSONResponse:
-        logger.warning("%s %s: %s (%s)", request.method, request.url.path, exc.title, exc.status)
+        logger.warning(
+            "%s %s: %s (%s)",
+            request.method,
+            sanear_para_log(request.url.path),
+            exc.title,
+            exc.status,
+        )
         return problema(exc.status, exc.title, detail=exc.detail, instance=str(request.url))
 
     @app.exception_handler(RequestValidationError)
