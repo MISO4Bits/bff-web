@@ -13,7 +13,7 @@ from app.api.routes import router
 from app.config import Settings, get_settings
 from app.logging_utils import SinRuidoDeHealthCheck
 from app.services import OnboardingService
-from app.telemetry import setup_telemetry, shutdown_telemetry
+from app.telemetry import agregar_encabezado_trace_id, setup_telemetry, shutdown_telemetry
 
 SPEC_PATH = Path(__file__).resolve().parents[2] / "openapi" / "openapi.yaml"
 
@@ -34,6 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="BFF Web — Onboarding", version="0.1.0", lifespan=lifespan)
     telemetry = setup_telemetry(app, settings)
+    agregar_encabezado_trace_id(app)
     app.state.settings = settings
     app.state.deps = deps
     app.state.service = service

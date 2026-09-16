@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from opentelemetry import metrics, trace
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
@@ -89,3 +89,34 @@ def shutdown_telemetry(telemetry: Telemetry | None) -> None:
         return
     for provider in telemetry:
         provider.shutdown()
+
+
+def agregar_encabezado_trace_id(app: FastAPI) -> None:
+    """Expone el ``trace_id`` de la petición como ``X-Trace-Id`` en la
+    respuesta (trazabilidad distribuida, DI-008 — issue 4Bits BITS-92).
+
+    Es lo que permite, dada una respuesta real de un cliente, buscar
+    exactamente esa transacción en Grafana Cloud sin adivinar por
+    timestamp: un mismo ``trace_id`` identifica la petición completa a
+    través de todos los servicios que la atienden (cada uno aporta sus
+    propios spans); mientras que cada span (por ejemplo, la llamada
+    saliente de bff-web hacia svc-cotizacion) tiene su propio ``span_id``
+    dentro de ese trace. ``HTTPXClientInstrumentor`` ya propaga el
+    ``traceparent`` (W3C Trace Context) en cada llamada saliente por
+    httpx — no hace falta nada adicional aquí para eso. Falta que el
+    servicio receptor (svc-cotizacion, svc-core) tenga su propio SDK de
+    OpenTelemetry activo para que aparezca como span hijo del mismo
+    trace; hasta entonces, este header solo refleja el trace_id que nace
+    en bff-web.
+
+    Sin efecto si OTel está deshabilitado: no hay span activo, por lo que
+    ``get_current_span()`` devuelve uno inválido y no se agrega el header.
+    """
+
+    @app.middleware("http")
+    async def _trace_id_en_respuesta(request: Request, call_next):
+        response = await call_next(request)
+        contexto = trace.get_current_span().get_span_context()
+        if contexto.is_valid:
+            response.headers["X-Trace-Id"] = format(contexto.trace_id, "032x")
+        return response
