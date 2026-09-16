@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from app.domain import BffError, Conflicto, NoAutorizado, SolicitudInvalida
 from app.resilience import ResilientHttpClient
+
+logger = logging.getLogger("bff_web.adapters.identity_platform")
 
 
 class IdentityPlatformAdapter:
@@ -26,10 +30,14 @@ class IdentityPlatformAdapter:
         if resp.status_code == 400:
             mensaje = _mensaje_error(resp)
             if "EMAIL_EXISTS" in mensaje:
+                logger.info("Identity Platform: correo ya registrado")
                 raise Conflicto("El correo ya está registrado")
+            logger.info("Identity Platform: registro rechazado (%s)", mensaje)
             raise SolicitudInvalida(mensaje or "registro rechazado por el proveedor")
         _asegurar_ok(resp)
-        return resp.json()["localId"]
+        sub = resp.json()["localId"]
+        logger.info("Identity Platform: cuenta creada sub=%s", sub)
+        return sub
 
     async def autenticar(self, email: str, password: str) -> str:
         resp = await self._http.request(
@@ -39,9 +47,12 @@ class IdentityPlatformAdapter:
             json={"email": email, "password": password, "returnSecureToken": True},
         )
         if resp.status_code == 400:
+            logger.info("Identity Platform: credenciales inválidas")
             raise NoAutorizado("credenciales inválidas")
         _asegurar_ok(resp)
-        return resp.json()["localId"]
+        sub = resp.json()["localId"]
+        logger.info("Identity Platform: autenticación exitosa sub=%s", sub)
+        return sub
 
     async def eliminar(self, sub: str) -> None:
         resp = await self._http.request(
@@ -51,6 +62,7 @@ class IdentityPlatformAdapter:
             json={"localId": sub},
         )
         _asegurar_ok(resp)
+        logger.info("Identity Platform: credencial eliminada sub=%s", sub)
 
 
 def _mensaje_error(resp: httpx.Response) -> str:

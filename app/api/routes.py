@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
@@ -26,6 +27,7 @@ from app.domain import (
 )
 from app.services import OnboardingService
 
+logger = logging.getLogger("bff_web.api")
 router = APIRouter(prefix="/v1")
 
 
@@ -56,6 +58,7 @@ ClaimsDep = Annotated[Claims, Depends(claims_actuales)]
     tags=["Registro"],
 )
 async def registrarse(payload: RegistroRequest, service: ServiceDep) -> RegistroResponse:
+    logger.info("POST /v1/registro: solicitud recibida")
     entrada = RegistroInput(
         email=payload.email,
         password=payload.password,
@@ -78,17 +81,20 @@ async def registrarse(payload: RegistroRequest, service: ServiceDep) -> Registro
 
 @router.post("/sesiones", response_model=SesionOut, tags=["Sesión"])
 async def iniciar_sesion(payload: CredencialesRequest, service: ServiceDep) -> SesionOut:
+    logger.info("POST /v1/sesiones: solicitud recibida")
     sesion = await service.iniciar_sesion(payload.email, payload.password)
     return SesionOut.model_validate(sesion)
 
 
 @router.post("/sesiones/refresco", response_model=SesionOut, tags=["Sesión"])
 async def refrescar_sesion(payload: RefrescoRequest, service: ServiceDep) -> SesionOut:
+    logger.info("POST /v1/sesiones/refresco: solicitud recibida")
     return SesionOut.model_validate(service.refrescar(payload.refresh_token))
 
 
 @router.get("/cuenta", response_model=CuentaOut, tags=["Cuenta"])
 async def obtener_cuenta(claims: ClaimsDep, service: ServiceDep) -> CuentaOut:
+    logger.info("GET /v1/cuenta: solicitud recibida cliente_id=%s", claims.cliente_id)
     cuenta = await service.obtener_cuenta(claims.cliente_id)
     return CuentaOut.model_validate(cuenta)
 
@@ -101,6 +107,9 @@ async def obtener_cuenta(claims: ClaimsDep, service: ServiceDep) -> CuentaOut:
 async def listar_mis_consentimientos(
     claims: ClaimsDep, service: ServiceDep
 ) -> list[ConsentimientoVistaOut]:
+    logger.info(
+        "GET /v1/cuenta/consentimientos: solicitud recibida cliente_id=%s", claims.cliente_id
+    )
     items = await service.listar_consentimientos(claims.cliente_id)
     return [ConsentimientoVistaOut.model_validate(i) for i in items]
 
@@ -116,6 +125,11 @@ async def otorgar_mi_consentimiento(
     claims: ClaimsDep,
     service: ServiceDep,
 ) -> ConsentimientoVistaOut:
+    logger.info(
+        "POST /v1/cuenta/consentimientos: solicitud recibida cliente_id=%s scope=%s",
+        claims.cliente_id,
+        payload.scope,
+    )
     vista = await service.otorgar_consentimiento(
         claims.cliente_id, payload.scope, payload.politica_version
     )
@@ -128,6 +142,11 @@ async def otorgar_mi_consentimiento(
     tags=["Consentimientos"],
 )
 async def revocar_mi_consentimiento(scope: str, claims: ClaimsDep, service: ServiceDep) -> Response:
+    logger.info(
+        "DELETE /v1/cuenta/consentimientos/%s: solicitud recibida cliente_id=%s",
+        scope,
+        claims.cliente_id,
+    )
     await service.revocar_consentimiento(claims.cliente_id, scope)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -164,6 +183,7 @@ async def crear_cotizacion(
     claims: ClaimsDep,
     service: ServiceDep,
 ) -> CotizacionOut:
+    logger.info("POST /v1/cotizaciones: solicitud recibida cliente_id=%s", claims.cliente_id)
     cotizacion = await service.crear_cotizacion(claims.cliente_id, _a_dominio_cotizacion(payload))
     return CotizacionOut.model_validate(cotizacion)
 
@@ -179,5 +199,10 @@ async def obtener_cotizacion(
     claims: ClaimsDep,
     service: ServiceDep,
 ) -> CotizacionOut:
+    logger.info(
+        "GET /v1/cotizaciones/%s: solicitud recibida cliente_id=%s",
+        cotizacion_id,
+        claims.cliente_id,
+    )
     cotizacion = await service.obtener_cotizacion(claims.cliente_id, cotizacion_id)
     return CotizacionOut.model_validate(cotizacion)

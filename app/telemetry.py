@@ -72,7 +72,11 @@ def setup_telemetry(app: FastAPI, settings: Settings) -> Telemetry | None:
     for logger_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
         logging.getLogger(logger_name).propagate = True
 
-    FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer_provider)
+    # /health lo golpean los probes cada 10-20s — es puro ruido para trazas
+    # de negocio (no aporta nada a "cómo se comportó un endpoint real").
+    FastAPIInstrumentor.instrument_app(
+        app, tracer_provider=tracer_provider, excluded_urls="/health"
+    )
     HTTPXClientInstrumentor().instrument(tracer_provider=tracer_provider)
 
     return tracer_provider, meter_provider, logger_provider

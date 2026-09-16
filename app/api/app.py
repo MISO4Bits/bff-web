@@ -11,6 +11,7 @@ from app.adapters.factory import build_dependencias
 from app.api.errors import install_error_handlers
 from app.api.routes import router
 from app.config import Settings, get_settings
+from app.logging_utils import SinRuidoDeHealthCheck
 from app.services import OnboardingService
 from app.telemetry import setup_telemetry, shutdown_telemetry
 
@@ -20,6 +21,7 @@ SPEC_PATH = Path(__file__).resolve().parents[2] / "openapi" / "openapi.yaml"
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO)
+    logging.getLogger("uvicorn.access").addFilter(SinRuidoDeHealthCheck())
 
     deps = build_dependencias(settings)
     service = OnboardingService(deps.identity, deps.core, deps.cotizacion, deps.sessions)
