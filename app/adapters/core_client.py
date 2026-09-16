@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from app.domain import (
@@ -14,6 +16,8 @@ from app.domain import (
     SolicitudInvalida,
 )
 from app.resilience import ResilientHttpClient
+
+logger = logging.getLogger("bff_web.adapters.core")
 
 
 class CoreClientAdapter:
@@ -42,11 +46,15 @@ class CoreClientAdapter:
 
         resp = await self._http.request("POST", "/clientes", json=cuerpo)
         if resp.status_code == 409:
+            logger.info("CoreTransaccional: documento ya registrado")
             raise Conflicto("El documento ya está registrado")
         if resp.status_code in (400, 422):
+            logger.info("CoreTransaccional: solicitud inválida (%s)", _detalle(resp))
             raise SolicitudInvalida(_detalle(resp))
         _asegurar_ok(resp, esperado=201)
-        return _a_cliente(resp.json())
+        cliente = _a_cliente(resp.json())
+        logger.info("CoreTransaccional: cliente creado cliente_id=%s", cliente.id)
+        return cliente
 
     async def obtener_cliente(self, cliente_id: str) -> ClienteCore:
         resp = await self._http.request("GET", f"/clientes/{cliente_id}")
@@ -82,6 +90,9 @@ class CoreClientAdapter:
         if resp.status_code in (400, 422):
             raise SolicitudInvalida(_detalle(resp))
         _asegurar_ok(resp, esperado=201)
+        logger.info(
+            "CoreTransaccional: consentimiento otorgado cliente_id=%s scope=%s", cliente_id, scope
+        )
         return _a_consentimiento(resp.json())
 
     async def revocar_consentimiento(self, cliente_id: str, scope: str) -> None:
@@ -89,6 +100,9 @@ class CoreClientAdapter:
         if resp.status_code == 404:
             raise RecursoNoEncontrado("Consentimiento no encontrado")
         _asegurar_ok(resp, esperado=204)
+        logger.info(
+            "CoreTransaccional: consentimiento revocado cliente_id=%s scope=%s", cliente_id, scope
+        )
 
 
 def _detalle(resp: httpx.Response) -> str:
