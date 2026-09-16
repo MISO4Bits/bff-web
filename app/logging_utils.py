@@ -18,3 +18,17 @@ class SinRuidoDeHealthCheck(logging.Filter):
         # uvicorn.access llama a logger.info(fmt, client_addr, method,
         # full_path, http_version, status_code) — full_path es args[2].
         return not (record.args and len(record.args) >= 3 and record.args[2] == "/health")
+
+
+def sanear_para_log(valor: str) -> str:
+    """Quita saltos de línea de un valor que viene del cliente (path o
+    query param, sin validar contra un formato cerrado) antes de
+    escribirlo en un log.
+
+    Sin esto, un valor como ``"a%0d%0aINFO: cuenta admin creada"`` en la
+    URL permite falsificar líneas de log completas (CWE-117 / log
+    injection, pythonsecurity:S5145) — SonarQube lo marca porque el dato
+    llega sin sanear desde una fuente que el cliente controla hasta un
+    ``logger.info``.
+    """
+    return valor.replace("\r", "").replace("\n", "")

@@ -25,6 +25,7 @@ from app.domain import (
     NoAutorizado,
     RegistroInput,
 )
+from app.logging_utils import sanear_para_log
 from app.services import OnboardingService
 
 logger = logging.getLogger("bff_web.api")
@@ -144,7 +145,7 @@ async def otorgar_mi_consentimiento(
 async def revocar_mi_consentimiento(scope: str, claims: ClaimsDep, service: ServiceDep) -> Response:
     logger.info(
         "DELETE /v1/cuenta/consentimientos/%s: solicitud recibida cliente_id=%s",
-        scope,
+        sanear_para_log(scope),
         claims.cliente_id,
     )
     await service.revocar_consentimiento(claims.cliente_id, scope)
@@ -201,7 +202,7 @@ async def obtener_cotizacion(
 ) -> CotizacionOut:
     logger.info(
         "GET /v1/cotizaciones/%s: solicitud recibida cliente_id=%s",
-        cotizacion_id,
+        sanear_para_log(cotizacion_id),
         claims.cliente_id,
     )
     cotizacion = await service.obtener_cotizacion(claims.cliente_id, cotizacion_id)

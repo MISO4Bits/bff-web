@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from app.logging_utils import SinRuidoDeHealthCheck
+from app.logging_utils import SinRuidoDeHealthCheck, sanear_para_log
 
 
 def _record(full_path: str) -> logging.LogRecord:
@@ -36,3 +36,12 @@ def test_conserva_registros_sin_argumentos_posicionales():
         exc_info=None,
     )
     assert SinRuidoDeHealthCheck().filter(record) is True
+
+
+def test_sanear_para_log_quita_saltos_de_linea():
+    valor = "OPEN_FINANCE\r\nINFO:bff_web.api:cuenta admin creada"
+    assert sanear_para_log(valor) == "OPEN_FINANCEINFO:bff_web.api:cuenta admin creada"
+
+
+def test_sanear_para_log_no_afecta_valores_normales():
+    assert sanear_para_log("OPEN_FINANCE") == "OPEN_FINANCE"
