@@ -12,6 +12,7 @@ from app.domain import (
     RegistroInput,
     Sesion,
 )
+from app.logging_utils import sanear_para_log
 from app.ports import CoreIdentityPort, CotizacionPort, IdentityProviderPort
 from app.security import SessionIssuer
 
@@ -87,13 +88,15 @@ class OnboardingService:
         logger.info(
             "otorgar_consentimiento: cliente_id=%s scope=%s politica_version=%s",
             cliente_id,
-            scope,
+            sanear_para_log(scope),
             politica_version,
         )
         return await self._core.otorgar_consentimiento(cliente_id, scope, politica_version, "WEB")
 
     async def revocar_consentimiento(self, cliente_id: str, scope: str) -> None:
-        logger.info("revocar_consentimiento: cliente_id=%s scope=%s", cliente_id, scope)
+        logger.info(
+            "revocar_consentimiento: cliente_id=%s scope=%s", cliente_id, sanear_para_log(scope)
+        )
         await self._core.revocar_consentimiento(cliente_id, scope)
 
     async def crear_cotizacion(self, cliente_id: str, entrada: CotizacionInput) -> Cotizacion:
@@ -108,6 +111,8 @@ class OnboardingService:
 
     async def obtener_cotizacion(self, cliente_id: str, cotizacion_id: str) -> Cotizacion:
         logger.info(
-            "obtener_cotizacion: consultando id=%s cliente_id=%s", cotizacion_id, cliente_id
+            "obtener_cotizacion: consultando id=%s cliente_id=%s",
+            sanear_para_log(cotizacion_id),
+            cliente_id,
         )
         return await self._cotizacion.obtener_cotizacion(cliente_id, cotizacion_id)

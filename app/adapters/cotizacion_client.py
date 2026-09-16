@@ -19,6 +19,7 @@ from app.domain import (
     SolicitudInvalida,
     Vigencia,
 )
+from app.logging_utils import sanear_para_log
 from app.resilience import ResilientHttpClient
 
 logger = logging.getLogger("bff_web.adapters.cotizacion")
@@ -67,7 +68,9 @@ class CotizacionClientAdapter:
             "GET", f"/cotizaciones/{cotizacion_id}", headers={"X-Cliente-Id": cliente_id}
         )
         if resp.status_code == 404:
-            logger.info("svc-cotizacion: cotización no encontrada id=%s", cotizacion_id)
+            logger.info(
+                "svc-cotizacion: cotización no encontrada id=%s", sanear_para_log(cotizacion_id)
+            )
             raise RecursoNoEncontrado("Cotización no encontrada")
         _asegurar_ok(resp)
         return _a_cotizacion(resp.json())

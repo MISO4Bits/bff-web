@@ -15,6 +15,7 @@ from app.domain import (
     RegistroInput,
     SolicitudInvalida,
 )
+from app.logging_utils import sanear_para_log
 from app.resilience import ResilientHttpClient
 
 logger = logging.getLogger("bff_web.adapters.core")
@@ -91,7 +92,9 @@ class CoreClientAdapter:
             raise SolicitudInvalida(_detalle(resp))
         _asegurar_ok(resp, esperado=201)
         logger.info(
-            "CoreTransaccional: consentimiento otorgado cliente_id=%s scope=%s", cliente_id, scope
+            "CoreTransaccional: consentimiento otorgado cliente_id=%s scope=%s",
+            cliente_id,
+            sanear_para_log(scope),
         )
         return _a_consentimiento(resp.json())
 
@@ -101,7 +104,9 @@ class CoreClientAdapter:
             raise RecursoNoEncontrado("Consentimiento no encontrado")
         _asegurar_ok(resp, esperado=204)
         logger.info(
-            "CoreTransaccional: consentimiento revocado cliente_id=%s scope=%s", cliente_id, scope
+            "CoreTransaccional: consentimiento revocado cliente_id=%s scope=%s",
+            cliente_id,
+            sanear_para_log(scope),
         )
 
 
