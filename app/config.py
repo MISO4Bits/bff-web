@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # Patrones de resiliencia hacia dependencias (§6.1: timeout duro 700 ms)
     http_timeout_seconds: float = 0.7
     http_retries: int = 2
+    # Pool de conexiones hacia dependencias (EXP-01): espera corta por una
+    # conexión libre y límites explícitos, no los defaults de httpx.
+    http_pool_timeout_seconds: float = 0.1
+    http_max_connections: int = 200
+    http_max_keepalive_connections: int = 100
     circuit_fail_max: int = 5
     circuit_reset_timeout_seconds: int = 30
 

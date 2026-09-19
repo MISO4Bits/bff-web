@@ -48,6 +48,9 @@ def build_dependencias(settings: Settings) -> Dependencias:
             ),
             timeout=settings.http_timeout_seconds,
             retries=settings.http_retries,
+            pool_timeout=settings.http_pool_timeout_seconds,
+            max_connections=settings.http_max_connections,
+            max_keepalive_connections=settings.http_max_keepalive_connections,
         )
         core_http = ResilientHttpClient(
             settings.core_base_url,
@@ -58,6 +61,9 @@ def build_dependencias(settings: Settings) -> Dependencias:
             ),
             timeout=settings.http_timeout_seconds,
             retries=settings.http_retries,
+            pool_timeout=settings.http_pool_timeout_seconds,
+            max_connections=settings.http_max_connections,
+            max_keepalive_connections=settings.http_max_keepalive_connections,
         )
         cotizacion_http = ResilientHttpClient(
             settings.cotizacion_base_url,
@@ -68,6 +74,9 @@ def build_dependencias(settings: Settings) -> Dependencias:
             ),
             timeout=settings.http_timeout_seconds,
             retries=settings.http_retries,
+            pool_timeout=settings.http_pool_timeout_seconds,
+            max_connections=settings.http_max_connections,
+            max_keepalive_connections=settings.http_max_keepalive_connections,
         )
         return Dependencias(
             IdentityPlatformAdapter(identity_http, settings.identity_api_key),
