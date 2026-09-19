@@ -97,3 +97,33 @@ async def test_timeout_se_trata_como_transitorio():
             await http.request("GET", "/lento")
     finally:
         await http.aclose()
+
+
+@respx.mock
+async def test_pool_agotado_falla_rapido_sin_reintentar():
+    """Reintentar ante PoolTimeout solo suma más espera al mismo cuello de
+    botella (EXP-01: p99 de 4.67 s por la cascada espera+reintento)."""
+    ruta = respx.get(f"{BASE}/ping").mock(side_effect=httpx.PoolTimeout("sin conexiones libres"))
+    http = _cliente(retries=2)
+    try:
+        with pytest.raises(DependenciaNoDisponible):
+            await http.request("GET", "/ping")
+    finally:
+        await http.aclose()
+    assert ruta.call_count == 1
+
+
+async def test_pool_y_timeouts_configurados_explicitamente():
+    http = ResilientHttpClient(
+        BASE,
+        breaker=build_breaker("dep", fail_max=5, reset_timeout=30),
+        timeout=0.7,
+        pool_timeout=0.05,
+        max_connections=150,
+        max_keepalive_connections=75,
+    )
+    try:
+        assert http._client.timeout.read == 0.7
+        assert http._client.timeout.pool == 0.05
+    finally:
+        await http.aclose()

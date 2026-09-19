@@ -31,7 +31,6 @@ _TRANSIENT_EXCEPTIONS = (
     httpx.ConnectTimeout,
     httpx.ReadTimeout,
     httpx.WriteTimeout,
-    httpx.PoolTimeout,
 )
 
 
@@ -92,9 +91,27 @@ class ResilientHttpClient:
         breaker: AsyncCircuitBreaker,
         timeout: float = 0.7,
         retries: int = 2,
+        pool_timeout: float = 0.1,
+        max_connections: int = 200,
+        max_keepalive_connections: int = 100,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._client = client or httpx.AsyncClient(base_url=base_url, timeout=timeout)
+        # `timeout` cubre conexión/lectura/escritura; la espera por una
+        # conexión libre del pool va aparte y corta (`pool_timeout`): con un
+        # solo número de 700 ms, un pool agotado hacía esperar los 700 ms
+        # completos y luego reintentar — EXP-01 (2026-09-19) mostró p50 de
+        # 985 ms pero p99 de 4.67 s en bff-web por esa cascada. Los límites
+        # del pool también son explícitos, no los defaults de httpx
+        # (100/20), para que las conexiones keep-alive se reutilicen en vez
+        # de abrir una TCP nueva por request bajo carga sostenida.
+        self._client = client or httpx.AsyncClient(
+            base_url=base_url,
+            timeout=httpx.Timeout(timeout, pool=pool_timeout),
+            limits=httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive_connections,
+            ),
+        )
         self._breaker = breaker
         self._retries = retries
 
@@ -113,6 +130,10 @@ class ResilientHttpClient:
                 return await self._breaker.call(_guarded)
             except CircuitBreakerError as exc:
                 raise DependenciaNoDisponible(str(exc)) from exc
+            except httpx.PoolTimeout as exc:
+                # Pool agotado: reintentar solo suma más espera al mismo
+                # cuello de botella — falla rápido, no se reintenta.
+                raise DependenciaNoDisponible(f"pool de conexiones agotado: {exc}") from exc
             except _TRANSIENT_EXCEPTIONS as exc:
                 raise _Transient(str(exc)) from exc
 
