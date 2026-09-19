@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -154,3 +155,16 @@ def test_get_attributes_quita_code_line_number_y_recorta_code_file_path():
     assert code_attributes.CODE_LINE_NUMBER not in atributos
     assert atributos[code_attributes.CODE_FILE_PATH] == "routes.py"
     assert atributos[code_attributes.CODE_FUNCTION_NAME] == "crear_cotizacion"
+
+
+def test_resource_lleva_un_instance_id_unico_por_proceso():
+    """Con varios workers por pod, sin esto sus métricas se pisan."""
+    app = FastAPI()
+    telemetry = setup_telemetry(app, _settings(otel_enabled=True))
+    try:
+        tracer_provider, _, _ = telemetry
+        atributos = tracer_provider.resource.attributes
+        assert atributos["service.name"] == "bff-web"
+        assert atributos["service.instance.id"].endswith(f"-{os.getpid()}")
+    finally:
+        shutdown_telemetry(telemetry)

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import socket
 
 from fastapi import FastAPI, Request
 from opentelemetry import metrics, trace
@@ -80,7 +81,19 @@ def setup_telemetry(app: FastAPI, settings: Settings) -> Telemetry | None:
         return None
 
     endpoint = settings.otel_exporter_endpoint
-    resource = Resource.create({"service.name": settings.service_name})
+    # service.instance.id único por PROCESO (hostname del pod + pid): con más
+    # de un worker de Uvicorn por pod (WEB_CONCURRENCY, EXP-01) los
+    # contadores/histogramas acumulados de cada worker saldrían con las
+    # mismas etiquetas y se pisarían entre sí en Grafana Cloud — rate() y
+    # histogram_quantile() darían basura. Con instance id distinto cada
+    # worker es su propia serie y los `sum by (...)` del dashboard los
+    # combinan bien.
+    resource = Resource.create(
+        {
+            "service.name": settings.service_name,
+            "service.instance.id": f"{socket.gethostname()}-{os.getpid()}",
+        }
+    )
 
     tracer_provider = TracerProvider(resource=resource)
     tracer_provider.add_span_processor(
