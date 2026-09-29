@@ -15,6 +15,7 @@ from app.domain import (
     DependenciaNoDisponible,
     NoAutorizado,
     RegistroInput,
+    ReglaNegocio,
 )
 from app.security import SessionIssuer
 from app.services import OnboardingService
@@ -28,6 +29,7 @@ DATOS = RegistroInput(
     primer_apellido="Ríos",
     fecha_nacimiento=date(1990, 1, 1),
     politica_version="v1",
+    autoriza_datos_financieros=True,
 )
 
 
@@ -132,6 +134,48 @@ async def test_obtener_cuenta(service):
     assert recuperada.email == DATOS.email
 
 
+async def test_verificar_disponibilidad(service):
+    await service.registrar(DATOS)
+
+    ocupado = await service.verificar_disponibilidad(
+        email=DATOS.email, tipo_documento=None, numero_documento=None
+    )
+    assert ocupado == {"correoDisponible": False, "documentoDisponible": None}
+
+    libre = await service.verificar_disponibilidad(
+        email="libre@example.com", tipo_documento=None, numero_documento=None
+    )
+    assert libre == {"correoDisponible": True, "documentoDisponible": None}
+
+
+async def test_reenviar_confirmacion_delega_en_identity(service, identity):
+    cuenta, _ = await service.registrar(DATOS)
+    sub = identity._por_email[DATOS.email][0]
+
+    await service.reenviar_confirmacion(sub)  # no lanza
+
+    with pytest.raises(NoAutorizado):
+        await service.reenviar_confirmacion("token-invalido")
+
+
+async def test_confirmar_cuenta_ok(service, identity):
+    cuenta, _ = await service.registrar(DATOS)
+    sub = identity._por_email[DATOS.email][0]
+    identity.marcar_verificado(sub)
+
+    confirmada = await service.confirmar_cuenta(sub)
+    assert confirmada.correo_confirmado is True
+    assert confirmada.cliente_id == cuenta.cliente_id
+
+
+async def test_confirmar_cuenta_sin_verificar_en_identity_platform(service, identity):
+    await service.registrar(DATOS)
+    sub = identity._por_email[DATOS.email][0]
+
+    with pytest.raises(ReglaNegocio):
+        await service.confirmar_cuenta(sub)
+
+
 async def test_iniciar_sesion_sin_cliente_en_core(identity, core):
     """Credencial válida pero sin cliente asociado en core -> RecursoNoEncontrado."""
     from app.domain import RecursoNoEncontrado
@@ -152,6 +196,7 @@ async def test_fake_core_documento_duplicado(core):
         primer_apellido="Persona",
         fecha_nacimiento=date(1985, 3, 3),
         politica_version="v1",
+        autoriza_datos_financieros=True,
     )
     await core.registrar_cliente("sub-a", DATOS)
     with pytest.raises(Conflicto):

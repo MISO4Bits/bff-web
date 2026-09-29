@@ -24,6 +24,7 @@ class FakeIdentityProvider:
     def __init__(self) -> None:
         # email -> (sub, password)
         self._por_email: dict[str, tuple[str, str]] = {}
+        self._verificados: set[str] = set()
 
     async def registrar(self, email: str, password: str) -> str:
         if email in self._por_email:
@@ -41,16 +42,33 @@ class FakeIdentityProvider:
     async def eliminar(self, sub: str) -> None:
         self._por_email = {e: v for e, v in self._por_email.items() if v[0] != sub}
 
+    async def enviar_verificacion(self, id_token: str) -> None:
+        # El "token" en modo fake es directamente el sub (ver marcar_verificado).
+        if id_token not in {sub for sub, _ in self._por_email.values()}:
+            raise NoAutorizado("token inválido o expirado")
+
+    async def verificar_correo(self, id_token: str) -> tuple[str, bool]:
+        if id_token not in {sub for sub, _ in self._por_email.values()}:
+            raise NoAutorizado("token inválido o expirado")
+        return id_token, id_token in self._verificados
+
+    def marcar_verificado(self, sub: str) -> None:
+        """Solo para pruebas: simula que Identity Platform ya validó el correo."""
+        self._verificados.add(sub)
+
 
 class FakeCoreIdentity:
     def __init__(self) -> None:
         self._clientes: dict[str, ClienteCore] = {}
         self._por_identidad: dict[str, str] = {}
         self._por_documento: set[tuple[str, str]] = set()
+        self._por_correo: set[str] = set()
         self._consentimientos: dict[tuple[str, str], ConsentimientoVista] = {}
 
     async def registrar_cliente(self, identity_ref: str, datos: RegistroInput) -> ClienteCore:
         clave = (datos.tipo_documento, datos.numero_documento)
+        if datos.email in self._por_correo:
+            raise Conflicto("El correo ya está registrado")
         if clave in self._por_documento:
             raise Conflicto("El documento ya está registrado")
         cliente = ClienteCore(
@@ -59,6 +77,7 @@ class FakeCoreIdentity:
             primer_apellido=datos.primer_apellido,
             email=datos.email,
             estado="ACTIVO",
+            correo_confirmado=False,
             segundo_nombre=datos.segundo_nombre,
             segundo_apellido=datos.segundo_apellido,
             telefono=datos.telefono,
@@ -66,12 +85,39 @@ class FakeCoreIdentity:
         self._clientes[cliente.id] = cliente
         self._por_identidad[identity_ref] = cliente.id
         self._por_documento.add(clave)
+        self._por_correo.add(datos.email)
         return cliente
 
     async def obtener_cliente(self, cliente_id: str) -> ClienteCore:
         cliente = self._clientes.get(cliente_id)
         if cliente is None:
             raise RecursoNoEncontrado("Cliente no encontrado")
+        return cliente
+
+    async def existe_cliente(
+        self, email: str | None, tipo_documento: str | None, numero_documento: str | None
+    ) -> dict:
+        correo_disponible = None if email is None else email not in self._por_correo
+        documento_disponible = None
+        if tipo_documento is not None and numero_documento is not None:
+            documento_disponible = (tipo_documento, numero_documento) not in self._por_documento
+        return {"correoDisponible": correo_disponible, "documentoDisponible": documento_disponible}
+
+    async def confirmar_cliente(self, cliente_id: str) -> ClienteCore:
+        cliente = await self.obtener_cliente(cliente_id)
+        if not cliente.correo_confirmado:
+            cliente = ClienteCore(
+                id=cliente.id,
+                primer_nombre=cliente.primer_nombre,
+                primer_apellido=cliente.primer_apellido,
+                email=cliente.email,
+                estado=cliente.estado,
+                correo_confirmado=True,
+                segundo_nombre=cliente.segundo_nombre,
+                segundo_apellido=cliente.segundo_apellido,
+                telefono=cliente.telefono,
+            )
+            self._clientes[cliente_id] = cliente
         return cliente
 
     async def buscar_cliente_por_identidad(self, identity_ref: str) -> ClienteCore:

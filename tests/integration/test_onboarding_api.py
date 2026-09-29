@@ -114,6 +114,53 @@ async def test_health(client):
     assert resp.json()["status"] == "ok"
 
 
+async def test_disponibilidad(client):
+    await client.post("/v1/registro", json=REGISTRO_VALIDO)
+
+    ocupado = await client.get(
+        "/v1/registro/disponibilidad", params={"correo": REGISTRO_VALIDO["email"]}
+    )
+    assert ocupado.status_code == 200
+    assert ocupado.json()["correoDisponible"] is False
+
+    libre = await client.get(
+        "/v1/registro/disponibilidad", params={"correo": "libre@example.com"}
+    )
+    assert libre.json()["correoDisponible"] is True
+
+
+async def test_reenvio_confirmacion_requiere_token_de_identity_platform(client, app):
+    registro = await client.post("/v1/registro", json=REGISTRO_VALIDO)
+    assert registro.status_code == 201
+    sub = app.state.deps.identity._por_email[REGISTRO_VALIDO["email"]][0]
+
+    ok = await client.post(
+        "/v1/registro/reenvio-confirmacion", headers={"Authorization": f"Bearer {sub}"}
+    )
+    assert ok.status_code == 204
+
+    sin_token = await client.post("/v1/registro/reenvio-confirmacion")
+    assert sin_token.status_code == 401
+
+
+async def test_confirmacion_de_cuenta(client, app):
+    registro = await client.post("/v1/registro", json=REGISTRO_VALIDO)
+    assert registro.status_code == 201
+    sub = app.state.deps.identity._por_email[REGISTRO_VALIDO["email"]][0]
+
+    aun_no = await client.post(
+        "/v1/registro/confirmacion", headers={"Authorization": f"Bearer {sub}"}
+    )
+    assert aun_no.status_code == 422
+
+    app.state.deps.identity.marcar_verificado(sub)
+    confirmada = await client.post(
+        "/v1/registro/confirmacion", headers={"Authorization": f"Bearer {sub}"}
+    )
+    assert confirmada.status_code == 200
+    assert confirmada.json()["correoConfirmado"] is True
+
+
 async def test_journey_cotizacion(cliente_autenticado):
     client, headers = cliente_autenticado
 

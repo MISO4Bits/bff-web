@@ -10,6 +10,7 @@ from app.domain import (
     CotizacionInput,
     Cuenta,
     RegistroInput,
+    ReglaNegocio,
     Sesion,
 )
 from app.logging_utils import sanear_para_log
@@ -79,6 +80,30 @@ class OnboardingService:
         logger.info("obtener_cuenta: consultando cliente_id=%s", cliente_id)
         cliente = await self._core.obtener_cliente(cliente_id)
         return Cuenta.desde_core(cliente)
+
+    async def verificar_disponibilidad(
+        self,
+        *,
+        email: str | None,
+        tipo_documento: str | None,
+        numero_documento: str | None,
+    ) -> dict:
+        logger.info("verificar_disponibilidad: consultando disponibilidad")
+        return await self._core.existe_cliente(email, tipo_documento, numero_documento)
+
+    async def reenviar_confirmacion(self, id_token: str) -> None:
+        logger.info("reenviar_confirmacion: solicitando reenvío a Identity Platform")
+        await self._identity.enviar_verificacion(id_token)
+
+    async def confirmar_cuenta(self, id_token: str) -> Cuenta:
+        logger.info("confirmar_cuenta: verificando correo contra Identity Platform")
+        sub, verificado = await self._identity.verificar_correo(id_token)
+        if not verificado:
+            raise ReglaNegocio("el correo todavía no está verificado en Identity Platform")
+        cliente = await self._core.buscar_cliente_por_identidad(sub)
+        confirmado = await self._core.confirmar_cliente(cliente.id)
+        logger.info("confirmar_cuenta: cuenta confirmada cliente_id=%s", confirmado.id)
+        return Cuenta.desde_core(confirmado)
 
     async def listar_consentimientos(self, cliente_id: str):
         logger.info("listar_consentimientos: consultando cliente_id=%s", cliente_id)

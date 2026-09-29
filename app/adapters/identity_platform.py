@@ -64,6 +64,40 @@ class IdentityPlatformAdapter:
         _asegurar_ok(resp)
         logger.info("Identity Platform: credencial eliminada sub=%s", sub)
 
+    async def enviar_verificacion(self, id_token: str) -> None:
+        resp = await self._http.request(
+            "POST",
+            "/v1/accounts:sendOobCode",
+            params=self._params,
+            json={"requestType": "VERIFY_EMAIL", "idToken": id_token},
+        )
+        if resp.status_code == 400:
+            logger.info(
+                "Identity Platform: no se pudo reenviar la verificación (%s)", _mensaje_error(resp)
+            )
+            raise NoAutorizado("token inválido o expirado")
+        _asegurar_ok(resp)
+        logger.info("Identity Platform: verificación reenviada")
+
+    async def verificar_correo(self, id_token: str) -> tuple[str, bool]:
+        resp = await self._http.request(
+            "POST",
+            "/v1/accounts:lookup",
+            params=self._params,
+            json={"idToken": id_token},
+        )
+        if resp.status_code == 400:
+            logger.info(
+                "Identity Platform: token inválido en verificar_correo (%s)", _mensaje_error(resp)
+            )
+            raise NoAutorizado("token inválido o expirado")
+        _asegurar_ok(resp)
+        usuarios = resp.json().get("users", [])
+        if not usuarios:
+            raise NoAutorizado("token inválido o expirado")
+        usuario = usuarios[0]
+        return usuario["localId"], bool(usuario.get("emailVerified", False))
+
 
 def _mensaje_error(resp: httpx.Response) -> str:
     try:

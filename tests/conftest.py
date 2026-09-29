@@ -22,6 +22,7 @@ REGISTRO_VALIDO = {
     "fechaNacimiento": "1991-05-20",
     "politicaVersion": "2026-01",
     "aceptaTerminos": True,
+    "autorizaDatosFinancieros": True,
 }
 
 
