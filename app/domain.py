@@ -31,10 +31,13 @@ class RegistroInput:
     primer_apellido: str
     fecha_nacimiento: date
     politica_version: str
+    autoriza_tratamiento_datos: bool
     autoriza_datos_financieros: bool
     segundo_nombre: str | None = None
     segundo_apellido: str | None = None
     telefono: str | None = None
+    politica_version_tratamiento_datos: str | None = None
+    politica_version_datos_financieros: str | None = None
 
 
 @dataclass(frozen=True)

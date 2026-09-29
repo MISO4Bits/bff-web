@@ -54,6 +54,7 @@ DATOS = RegistroInput(
     primer_apellido="Ríos",
     fecha_nacimiento=date(1990, 1, 1),
     politica_version="v1",
+    autoriza_tratamiento_datos=True,
     autoriza_datos_financieros=True,
 )
 

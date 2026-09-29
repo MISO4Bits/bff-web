@@ -29,6 +29,7 @@ DATOS = RegistroInput(
     primer_apellido="Ríos",
     fecha_nacimiento=date(1990, 1, 1),
     politica_version="v1",
+    autoriza_tratamiento_datos=True,
     autoriza_datos_financieros=True,
 )
 
@@ -196,6 +197,7 @@ async def test_fake_core_documento_duplicado(core):
         primer_apellido="Persona",
         fecha_nacimiento=date(1985, 3, 3),
         politica_version="v1",
+        autoriza_tratamiento_datos=True,
         autoriza_datos_financieros=True,
     )
     await core.registrar_cliente("sub-a", DATOS)

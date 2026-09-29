@@ -84,10 +84,13 @@ async def registrarse(payload: RegistroRequest, service: ServiceDep) -> Registro
         primer_apellido=payload.primer_apellido,
         fecha_nacimiento=payload.fecha_nacimiento,
         politica_version=payload.politica_version,
+        autoriza_tratamiento_datos=payload.autoriza_tratamiento_datos,
         autoriza_datos_financieros=payload.autoriza_datos_financieros,
         segundo_nombre=payload.segundo_nombre,
         segundo_apellido=payload.segundo_apellido,
         telefono=payload.telefono,
+        politica_version_tratamiento_datos=payload.politica_version_tratamiento_datos,
+        politica_version_datos_financieros=payload.politica_version_datos_financieros,
     )
     cuenta, sesion = await service.registrar(entrada)
     return RegistroResponse(

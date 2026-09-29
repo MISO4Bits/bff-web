@@ -38,7 +38,10 @@ class RegistroRequest(_Model):
     telefono: str | None = Field(default=None, pattern=_TELEFONO)
     politica_version: str = Field(max_length=20)
     acepta_terminos: Literal[True]
+    autoriza_tratamiento_datos: bool
+    politica_version_tratamiento_datos: str | None = Field(default=None, max_length=20)
     autoriza_datos_financieros: bool
+    politica_version_datos_financieros: str | None = Field(default=None, max_length=20)
 
 
 class CredencialesRequest(_Model):

@@ -37,6 +37,10 @@ class CoreClientAdapter:
             "primerApellido": datos.primer_apellido,
             "fechaNacimiento": datos.fecha_nacimiento.isoformat(),
             "email": datos.email,
+            # El BFF web es el único canal hoy; igual que en otorgar_consentimiento,
+            # se fija "WEB" aquí en vez de pedírselo al cliente final.
+            "canal": "WEB",
+            "autorizaTratamientoDatos": datos.autoriza_tratamiento_datos,
             "autorizaDatosFinancieros": datos.autoriza_datos_financieros,
         }
         if datos.segundo_nombre:
@@ -45,6 +49,10 @@ class CoreClientAdapter:
             cuerpo["segundoApellido"] = datos.segundo_apellido
         if datos.telefono:
             cuerpo["telefono"] = datos.telefono
+        if datos.politica_version_tratamiento_datos:
+            cuerpo["politicaVersionTratamientoDatos"] = datos.politica_version_tratamiento_datos
+        if datos.politica_version_datos_financieros:
+            cuerpo["politicaVersionDatosFinancieros"] = datos.politica_version_datos_financieros
 
         resp = await self._http.request("POST", "/clientes", json=cuerpo)
         if resp.status_code == 409:
