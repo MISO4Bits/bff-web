@@ -76,6 +76,80 @@ paths:
         '422': { $ref: '#/components/responses/EntidadNoProcesable' }
         '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
 
+  /v1/registro/disponibilidad:
+    get:
+      operationId: consultarDisponibilidad
+      tags: [Registro]
+      summary: Consulta si un correo y/o documento ya están registrados
+      description: |
+        **Público** (no requiere token). Chequeo de solo lectura para validar en
+        vivo el formulario de registro (BITS-93) — proxya a CoreTransaccional.
+        No reemplaza la validación atómica de `POST /v1/registro`.
+
+        Pendiente (BITS-251, sin resolver): decisión de arquitectura sobre
+        reconocimiento de cliente (App Check) para distinguir apps reales de
+        tráfico de ataque en este endpoint público sin usuario autenticado.
+      security: []
+      parameters:
+        - name: correo
+          in: query
+          required: false
+          schema: { type: string, format: email, maxLength: 254 }
+        - name: tipoDocumento
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/TipoDocumento' }
+        - name: numeroDocumento
+          in: query
+          required: false
+          schema: { type: string, minLength: 4, maxLength: 20 }
+      responses:
+        '200':
+          description: Disponibilidad de los campos consultados.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Disponibilidad' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+
+  /v1/registro/reenvio-confirmacion:
+    post:
+      operationId: reenviarConfirmacion
+      tags: [Registro]
+      summary: Reenvía el correo de activación
+      description: |
+        Requiere el **ID token de Identity Platform** de la sesión recién creada
+        y aún no confirmada (no la sesión propia del BFF) — así no hace falta un
+        endpoint público indexado por correo. Identity Platform reenvía el
+        enlace con su propio mecanismo (BITS-93 AC-4); esta operación no impone
+        una ventana de vencimiento propia.
+      security:
+        - identityPlatformToken: []
+      responses:
+        '204':
+          description: Correo de activación reenviado.
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+
+  /v1/registro/confirmacion:
+    post:
+      operationId: confirmarCuenta
+      tags: [Registro]
+      summary: Confirma la cuenta tras validar el enlace de activación
+      description: |
+        El frontend valida el enlace contra Identity Platform (`applyActionCode`)
+        y llama aquí con un ID token fresco (`email_verified: true`). El BFF lo
+        valida contra Identity Platform y, si corresponde, confirma la cuenta en
+        CoreTransaccional (BITS-93 AC-3). Idempotente: confirmar dos veces no falla.
+      security:
+        - identityPlatformToken: []
+      responses:
+        '200':
+          description: Cuenta confirmada (o ya lo estaba).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cuenta' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '422': { $ref: '#/components/responses/EntidadNoProcesable' }
+
   /v1/sesiones:
     post:
       operationId: iniciarSesion
@@ -234,6 +308,16 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Token de Identity Platform obtenido en `/v1/registro` o `/v1/sesiones`.
+    identityPlatformToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        ID token de Identity Platform tal cual lo emite (no la sesión propia del
+        BFF). El BFF lo valida contra Identity Platform, no localmente — se usa
+        solo en el paso de activación (`/v1/registro/reenvio-confirmacion`,
+        `/v1/registro/confirmacion`), donde el cliente puede no tener aún una
+        sesión del BFF completamente confirmada.
 
   parameters:
     IdempotencyKey:
@@ -280,7 +364,7 @@ components:
     RegistroRequest:
       type: object
       additionalProperties: false
-      required: [email, password, tipoDocumento, numeroDocumento, primerNombre, primerApellido, fechaNacimiento, politicaVersion, aceptaTerminos]
+      required: [email, password, tipoDocumento, numeroDocumento, primerNombre, primerApellido, fechaNacimiento, politicaVersion, aceptaTerminos, autorizaTratamientoDatos, autorizaDatosFinancieros]
       properties:
         email: { type: string, format: email, maxLength: 254 }
         password: { type: string, format: password, minLength: 10, maxLength: 128 }
@@ -297,6 +381,25 @@ components:
           type: boolean
           const: true
           description: Debe ser true; el cliente aceptó términos y política de tratamiento de datos.
+        autorizaTratamientoDatos:
+          type: boolean
+          description: |
+            Consentimiento OPEN_DATA / tratamiento de datos personales. `false`
+            no bloquea el registro; solo deja el consentimiento en `NO_OTORGADO`.
+        politicaVersionTratamientoDatos:
+          type: [string, 'null']
+          maxLength: 20
+          description: Versión del aviso de tratamiento de datos aceptado. Solo aplica si se autoriza.
+        autorizaDatosFinancieros:
+          type: boolean
+          description: |
+            Consentimiento OPEN_FINANCE (BITS-93 AC-9). `false` no bloquea el
+            registro — al cotizar, el precio se calcula solo con los datos que
+            el cliente aporte.
+        politicaVersionDatosFinancieros:
+          type: [string, 'null']
+          maxLength: 20
+          description: Versión de la autorización de datos financieros aceptada. Solo aplica si se autoriza.
 
     RegistroResponse:
       type: object
@@ -327,7 +430,7 @@ components:
     Cuenta:
       type: object
       additionalProperties: false
-      required: [clienteId, primerNombre, primerApellido, email, estado]
+      required: [clienteId, primerNombre, primerApellido, email, estado, correoConfirmado]
       properties:
         clienteId: { type: string, format: uuid }
         primerNombre: { type: string }
@@ -337,6 +440,16 @@ components:
         email: { type: string, format: email }
         telefono: { type: [string, 'null'] }
         estado: { $ref: '#/components/schemas/EstadoCliente' }
+        correoConfirmado:
+          type: boolean
+          description: BITS-93 AC-3 — no condiciona cotización ni coberturas, solo la formalización del contrato.
+
+    Disponibilidad:
+      type: object
+      additionalProperties: false
+      properties:
+        correoDisponible: { type: [boolean, 'null'], description: 'null si no se consultó correo.' }
+        documentoDisponible: { type: [boolean, 'null'], description: 'null si no se consultó documento.' }
 
     OtorgarConsentimientoRequest:
       type: object

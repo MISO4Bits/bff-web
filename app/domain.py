@@ -31,9 +31,13 @@ class RegistroInput:
     primer_apellido: str
     fecha_nacimiento: date
     politica_version: str
+    autoriza_tratamiento_datos: bool
+    autoriza_datos_financieros: bool
     segundo_nombre: str | None = None
     segundo_apellido: str | None = None
     telefono: str | None = None
+    politica_version_tratamiento_datos: str | None = None
+    politica_version_datos_financieros: str | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +47,7 @@ class ClienteCore:
     primer_apellido: str
     email: str
     estado: str
+    correo_confirmado: bool = False
     segundo_nombre: str | None = None
     segundo_apellido: str | None = None
     telefono: str | None = None
@@ -55,6 +60,7 @@ class Cuenta:
     primer_apellido: str
     email: str
     estado: str
+    correo_confirmado: bool = False
     segundo_nombre: str | None = None
     segundo_apellido: str | None = None
     telefono: str | None = None
@@ -67,6 +73,7 @@ class Cuenta:
             primer_apellido=c.primer_apellido,
             email=c.email,
             estado=c.estado,
+            correo_confirmado=c.correo_confirmado,
             segundo_nombre=c.segundo_nombre,
             segundo_apellido=c.segundo_apellido,
             telefono=c.telefono,

@@ -21,6 +21,14 @@ class IdentityProviderPort(Protocol):
         """Compensación: borra una credencial recién creada."""
         ...
 
+    async def enviar_verificacion(self, id_token: str) -> None:
+        """Pide a Identity Platform reenviar el correo de verificación (AC-4)."""
+        ...
+
+    async def verificar_correo(self, id_token: str) -> tuple[str, bool]:
+        """Devuelve ``(sub, email_verified)`` según Identity Platform lo reporte ahora mismo."""
+        ...
+
 
 @runtime_checkable
 class CoreIdentityPort(Protocol):
@@ -37,6 +45,12 @@ class CoreIdentityPort(Protocol):
     ) -> ConsentimientoVista: ...
 
     async def revocar_consentimiento(self, cliente_id: str, scope: str) -> None: ...
+
+    async def existe_cliente(
+        self, email: str | None, tipo_documento: str | None, numero_documento: str | None
+    ) -> dict: ...
+
+    async def confirmar_cliente(self, cliente_id: str) -> ClienteCore: ...
 
 
 @runtime_checkable

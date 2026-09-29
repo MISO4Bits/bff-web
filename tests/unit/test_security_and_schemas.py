@@ -20,6 +20,8 @@ VALIDO = {
     "fechaNacimiento": "1990-01-01",
     "politicaVersion": "v1",
     "aceptaTerminos": True,
+    "autorizaTratamientoDatos": True,
+    "autorizaDatosFinancieros": True,
 }
 
 

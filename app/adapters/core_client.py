@@ -37,6 +37,11 @@ class CoreClientAdapter:
             "primerApellido": datos.primer_apellido,
             "fechaNacimiento": datos.fecha_nacimiento.isoformat(),
             "email": datos.email,
+            # El BFF web es el único canal hoy; igual que en otorgar_consentimiento,
+            # se fija "WEB" aquí en vez de pedírselo al cliente final.
+            "canal": "WEB",
+            "autorizaTratamientoDatos": datos.autoriza_tratamiento_datos,
+            "autorizaDatosFinancieros": datos.autoriza_datos_financieros,
         }
         if datos.segundo_nombre:
             cuerpo["segundoNombre"] = datos.segundo_nombre
@@ -44,6 +49,10 @@ class CoreClientAdapter:
             cuerpo["segundoApellido"] = datos.segundo_apellido
         if datos.telefono:
             cuerpo["telefono"] = datos.telefono
+        if datos.politica_version_tratamiento_datos:
+            cuerpo["politicaVersionTratamientoDatos"] = datos.politica_version_tratamiento_datos
+        if datos.politica_version_datos_financieros:
+            cuerpo["politicaVersionDatosFinancieros"] = datos.politica_version_datos_financieros
 
         resp = await self._http.request("POST", "/clientes", json=cuerpo)
         if resp.status_code == 409:
@@ -109,6 +118,27 @@ class CoreClientAdapter:
             sanear_para_log(scope),
         )
 
+    async def existe_cliente(
+        self, email: str | None, tipo_documento: str | None, numero_documento: str | None
+    ) -> dict:
+        params = {}
+        if email is not None:
+            params["correo"] = email
+        if tipo_documento is not None and numero_documento is not None:
+            params["tipoDocumento"] = tipo_documento
+            params["numeroDocumento"] = numero_documento
+        resp = await self._http.request("GET", "/clientes/disponibilidad", params=params)
+        _asegurar_ok(resp)
+        return resp.json()
+
+    async def confirmar_cliente(self, cliente_id: str) -> ClienteCore:
+        resp = await self._http.request("POST", f"/clientes/{cliente_id}/confirmacion")
+        if resp.status_code == 404:
+            raise RecursoNoEncontrado("Cliente no encontrado")
+        _asegurar_ok(resp)
+        logger.info("cliente confirmado cliente_id=%s", cliente_id)
+        return _a_cliente(resp.json())
+
 
 def _detalle(resp: httpx.Response) -> str:
     try:
@@ -129,6 +159,7 @@ def _a_cliente(data: dict) -> ClienteCore:
         primer_apellido=data["primerApellido"],
         email=data["email"],
         estado=data["estado"],
+        correo_confirmado=data.get("correoConfirmado", False),
         segundo_nombre=data.get("segundoNombre"),
         segundo_apellido=data.get("segundoApellido"),
         telefono=data.get("telefono"),

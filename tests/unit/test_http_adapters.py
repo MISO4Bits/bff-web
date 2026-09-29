@@ -54,6 +54,8 @@ DATOS = RegistroInput(
     primer_apellido="Ríos",
     fecha_nacimiento=date(1990, 1, 1),
     politica_version="v1",
+    autoriza_tratamiento_datos=True,
+    autoriza_datos_financieros=True,
 )
 
 
@@ -231,6 +233,83 @@ async def test_core_mapea_errores_de_negocio_y_no_esperados():
         respx.get(f"{CORE}/clientes/cX").mock(return_value=httpx.Response(500, json={}))
         with pytest.raises(BffError):
             await adapter.obtener_cliente("cX")
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_identity_enviar_verificacion_ok_y_token_invalido():
+    ruta = respx.post(f"{IDP}/v1/accounts:sendOobCode")
+    ruta.mock(return_value=httpx.Response(200, json={}))
+    adapter = _idp()
+    try:
+        await adapter.enviar_verificacion("token-1")
+        assert ruta.calls.last.request is not None
+
+        ruta.mock(return_value=httpx.Response(400, json={"error": {"message": "INVALID_ID_TOKEN"}}))
+        with pytest.raises(NoAutorizado):
+            await adapter.enviar_verificacion("token-malo")
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_identity_verificar_correo_ok_no_verificado_y_token_invalido():
+    ruta = respx.post(f"{IDP}/v1/accounts:lookup")
+    adapter = _idp()
+    try:
+        ruta.mock(
+            return_value=httpx.Response(
+                200, json={"users": [{"localId": "sub-1", "emailVerified": True}]}
+            )
+        )
+        assert await adapter.verificar_correo("token-1") == ("sub-1", True)
+
+        ruta.mock(return_value=httpx.Response(200, json={"users": [{"localId": "sub-1"}]}))
+        assert await adapter.verificar_correo("token-1") == ("sub-1", False)
+
+        ruta.mock(return_value=httpx.Response(200, json={"users": []}))
+        with pytest.raises(NoAutorizado):
+            await adapter.verificar_correo("token-1")
+
+        ruta.mock(return_value=httpx.Response(400, json={"error": {"message": "INVALID_ID_TOKEN"}}))
+        with pytest.raises(NoAutorizado):
+            await adapter.verificar_correo("token-malo")
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_core_existe_cliente_y_confirmar_cliente():
+    respx.get(f"{CORE}/clientes/disponibilidad").mock(
+        return_value=httpx.Response(
+            200, json={"correoDisponible": True, "documentoDisponible": None}
+        )
+    )
+    respx.post(f"{CORE}/clientes/c1/confirmacion").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "c1",
+                "primerNombre": "Ana",
+                "primerApellido": "Ríos",
+                "email": "ana@example.com",
+                "estado": "ACTIVO",
+                "correoConfirmado": True,
+            },
+        )
+    )
+    respx.post(f"{CORE}/clientes/c9/confirmacion").mock(return_value=httpx.Response(404, json={}))
+    adapter = _core()
+    try:
+        disponibilidad = await adapter.existe_cliente("libre@example.com", None, None)
+        assert disponibilidad == {"correoDisponible": True, "documentoDisponible": None}
+
+        confirmado = await adapter.confirmar_cliente("c1")
+        assert confirmado.correo_confirmado is True
+
+        with pytest.raises(RecursoNoEncontrado):
+            await adapter.confirmar_cliente("c9")
     finally:
         await adapter.aclose()
 

@@ -41,7 +41,7 @@ def _validar(spec: dict, ref: str, instancia) -> None:
     assert not errores, f"{ref}: {[e.message for e in errores]}"
 
 
-async def test_respuestas_cumplen_el_contrato(client, openapi_spec):
+async def test_respuestas_cumplen_el_contrato(client, app, openapi_spec):
     registro = await client.post("/v1/registro", json=REGISTRO_VALIDO)
     assert registro.status_code == 201
     _validar(openapi_spec, "RegistroResponse", registro.json())
@@ -89,6 +89,20 @@ async def test_respuestas_cumplen_el_contrato(client, openapi_spec):
     cotizacion = await client.post("/v1/cotizaciones", headers=headers, json=solicitud_cotizacion)
     assert cotizacion.status_code == 201
     _validar(openapi_spec, "Cotizacion", cotizacion.json())
+
+    disponibilidad = await client.get(
+        "/v1/registro/disponibilidad", params={"correo": "otro@example.com"}
+    )
+    assert disponibilidad.status_code == 200
+    _validar(openapi_spec, "Disponibilidad", disponibilidad.json())
+
+    sub = app.state.deps.identity._por_email[REGISTRO_VALIDO["email"]][0]
+    app.state.deps.identity.marcar_verificado(sub)
+    confirmacion = await client.post(
+        "/v1/registro/confirmacion", headers={"Authorization": f"Bearer {sub}"}
+    )
+    assert confirmacion.status_code == 200
+    _validar(openapi_spec, "Cuenta", confirmacion.json())
 
 
 async def test_errores_cumplen_problem_details(client, openapi_spec):

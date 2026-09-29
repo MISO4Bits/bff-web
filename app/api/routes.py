@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from app.api.schemas import (
     ConsentimientoVistaOut,
@@ -11,6 +11,7 @@ from app.api.schemas import (
     CotizacionRequest,
     CredencialesRequest,
     CuentaOut,
+    DisponibilidadOut,
     OtorgarConsentimientoRequest,
     RefrescoRequest,
     RegistroRequest,
@@ -52,6 +53,20 @@ async def claims_actuales(
 ClaimsDep = Annotated[Claims, Depends(claims_actuales)]
 
 
+async def identity_token_actual(
+    authorization: Annotated[str | None, Header()] = None,
+) -> str:
+    """Token de Identity Platform tal cual (no la sesión propia del BFF) —
+    ver esquema ``identityPlatformToken`` en el contrato. El BFF no lo decodifica
+    localmente, solo lo reenvía a Identity Platform para que lo valide."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise NoAutorizado("falta el encabezado Authorization")
+    return authorization.split(" ", 1)[1]
+
+
+IdentityTokenDep = Annotated[str, Depends(identity_token_actual)]
+
+
 @router.post(
     "/registro",
     response_model=RegistroResponse,
@@ -69,15 +84,53 @@ async def registrarse(payload: RegistroRequest, service: ServiceDep) -> Registro
         primer_apellido=payload.primer_apellido,
         fecha_nacimiento=payload.fecha_nacimiento,
         politica_version=payload.politica_version,
+        autoriza_tratamiento_datos=payload.autoriza_tratamiento_datos,
+        autoriza_datos_financieros=payload.autoriza_datos_financieros,
         segundo_nombre=payload.segundo_nombre,
         segundo_apellido=payload.segundo_apellido,
         telefono=payload.telefono,
+        politica_version_tratamiento_datos=payload.politica_version_tratamiento_datos,
+        politica_version_datos_financieros=payload.politica_version_datos_financieros,
     )
     cuenta, sesion = await service.registrar(entrada)
     return RegistroResponse(
         cuenta=CuentaOut.model_validate(cuenta),
         sesion=SesionOut.model_validate(sesion),
     )
+
+
+@router.get("/registro/disponibilidad", response_model=DisponibilidadOut, tags=["Registro"])
+async def consultar_disponibilidad(
+    service: ServiceDep,
+    correo: Annotated[str | None, Query(max_length=254)] = None,
+    tipo_documento: Annotated[str | None, Query(alias="tipoDocumento")] = None,
+    numero_documento: Annotated[
+        str | None, Query(alias="numeroDocumento", min_length=4, max_length=20)
+    ] = None,
+) -> DisponibilidadOut:
+    logger.info("GET /v1/registro/disponibilidad: solicitud recibida")
+    resultado = await service.verificar_disponibilidad(
+        email=correo, tipo_documento=tipo_documento, numero_documento=numero_documento
+    )
+    return DisponibilidadOut.model_validate(resultado)
+
+
+@router.post(
+    "/registro/reenvio-confirmacion",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Registro"],
+)
+async def reenviar_confirmacion(id_token: IdentityTokenDep, service: ServiceDep) -> Response:
+    logger.info("POST /v1/registro/reenvio-confirmacion: solicitud recibida")
+    await service.reenviar_confirmacion(id_token)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/registro/confirmacion", response_model=CuentaOut, tags=["Registro"])
+async def confirmar_cuenta(id_token: IdentityTokenDep, service: ServiceDep) -> CuentaOut:
+    logger.info("POST /v1/registro/confirmacion: solicitud recibida")
+    cuenta = await service.confirmar_cuenta(id_token)
+    return CuentaOut.model_validate(cuenta)
 
 
 @router.post("/sesiones", response_model=SesionOut, tags=["Sesión"])
