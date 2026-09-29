@@ -265,9 +265,7 @@ async def test_identity_verificar_correo_ok_no_verificado_y_token_invalido():
         )
         assert await adapter.verificar_correo("token-1") == ("sub-1", True)
 
-        ruta.mock(
-            return_value=httpx.Response(200, json={"users": [{"localId": "sub-1"}]})
-        )
+        ruta.mock(return_value=httpx.Response(200, json={"users": [{"localId": "sub-1"}]}))
         assert await adapter.verificar_correo("token-1") == ("sub-1", False)
 
         ruta.mock(return_value=httpx.Response(200, json={"users": []}))

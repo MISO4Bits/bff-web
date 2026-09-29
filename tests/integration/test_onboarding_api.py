@@ -123,9 +123,7 @@ async def test_disponibilidad(client):
     assert ocupado.status_code == 200
     assert ocupado.json()["correoDisponible"] is False
 
-    libre = await client.get(
-        "/v1/registro/disponibilidad", params={"correo": "libre@example.com"}
-    )
+    libre = await client.get("/v1/registro/disponibilidad", params={"correo": "libre@example.com"})
     assert libre.json()["correoDisponible"] is True
 
 
