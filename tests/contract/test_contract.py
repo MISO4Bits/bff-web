@@ -113,7 +113,20 @@ async def test_errores_cumplen_problem_details(client, openapi_spec):
 
     malo = await client.post("/v1/registro", json={"email": "x"})
     assert malo.status_code == 400
-    _validar(openapi_spec, "Problema", malo.json())
+    _validar(openapi_spec, "ProblemaValidacion", malo.json())
+
+
+def test_los_ejemplos_cumplen_su_esquema(openapi_spec):
+    schemas = openapi_spec["components"]["schemas"]
+    for nombre, esquema in schemas.items():
+        for ejemplo in esquema.get("examples", []):
+            _validar(openapi_spec, nombre, ejemplo)
+
+    for respuesta in openapi_spec["components"]["responses"].values():
+        for media in respuesta["content"].values():
+            ref = media["schema"]["$ref"].rsplit("/", 1)[-1]
+            for ejemplo in media.get("examples", {}).values():
+                _validar(openapi_spec, ref, ejemplo["value"])
 
 
 async def test_expone_el_contrato(client):

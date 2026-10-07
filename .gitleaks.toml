@@ -2,7 +2,10 @@
 useDefault = true
 
 [allowlist]
-description = "Identificadores públicos conocidos, no secretos (ej. clave de proyecto de SonarQube Cloud)"
+description = "Identificadores públicos conocidos, no secretos (ej. clave de proyecto de SonarQube Cloud) y contrato OpenAPI (solo ejemplos ficticios)"
+paths = [
+  '''^openapi/openapi\.yaml$''',
+]
 regexes = [
   '''^MISO4Bits_[\w-]+$''',
 ]
