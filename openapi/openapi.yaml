@@ -332,32 +332,134 @@ components:
       description: Solicitud mal formada o con validación de esquema fallida.
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/Problema' }
+          schema: { $ref: '#/components/schemas/ProblemaValidacion' }
+          examples:
+            camposInvalidos:
+              summary: Campos que no cumplen el esquema
+              value:
+                type: about:blank
+                title: Solicitud inválida
+                status: 400
+                detail: La solicitud no cumple el esquema
+                instance: https://dev.solventa4bits.com/web/v1/registro
+                errores:
+                  - campo: body.email
+                    mensaje: String should match pattern '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+                  - campo: body.password
+                    mensaje: String should have at least 10 characters
+            campoFaltante:
+              summary: Falta un campo obligatorio
+              value:
+                type: about:blank
+                title: Solicitud inválida
+                status: 400
+                detail: La solicitud no cumple el esquema
+                instance: https://dev.solventa4bits.com/web/v1/registro
+                errores:
+                  - campo: body.primerApellido
+                    mensaje: Field required
     NoAutorizado:
       description: Falta el token, está expirado o es inválido.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }
+          examples:
+            sinToken:
+              summary: No se envió el encabezado Authorization
+              value:
+                type: about:blank
+                title: No autorizado
+                status: 401
+                detail: falta el encabezado Authorization
+                instance: https://dev.solventa4bits.com/web/v1/cuenta
+            tokenExpirado:
+              summary: El token ya venció
+              value:
+                type: about:blank
+                title: No autorizado
+                status: 401
+                detail: token expirado
+                instance: https://dev.solventa4bits.com/web/v1/cuenta
+            credencialesInvalidas:
+              summary: Correo o contraseña incorrectos (inicio de sesión)
+              value:
+                type: about:blank
+                title: No autorizado
+                status: 401
+                detail: credenciales inválidas
+                instance: https://dev.solventa4bits.com/web/v1/sesiones
     Conflicto:
       description: El correo o el documento ya están registrados.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }
+          examples:
+            correoRegistrado:
+              summary: El correo ya tiene una cuenta
+              value:
+                type: about:blank
+                title: Conflicto
+                status: 409
+                detail: El correo ya está registrado
+                instance: https://dev.solventa4bits.com/web/v1/registro
+            documentoRegistrado:
+              summary: El documento ya pertenece a un cliente
+              value:
+                type: about:blank
+                title: Conflicto
+                status: 409
+                detail: El documento ya está registrado
+                instance: https://dev.solventa4bits.com/web/v1/registro
     EntidadNoProcesable:
       description: La solicitud es válida pero incumple una regla de negocio.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }
+          examples:
+            correoSinVerificar:
+              summary: Confirmar la cuenta sin haber verificado el correo
+              value:
+                type: about:blank
+                title: Regla de negocio no satisfecha
+                status: 422
+                detail: el correo todavía no está verificado en Identity Platform
+                instance: https://dev.solventa4bits.com/web/v1/registro/confirmacion
     NoEncontrado:
       description: El recurso no existe.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }
+          examples:
+            cotizacionNoExiste:
+              summary: La cotización no existe o no es del cliente
+              value:
+                type: about:blank
+                title: Recurso no encontrado
+                status: 404
+                detail: Cotización no encontrada
+                instance: https://dev.solventa4bits.com/web/v1/cotizaciones/7c9e6679-7425-40de-944b-e07fc1f90ae7
+            consentimientoNoExiste:
+              summary: El consentimiento no existe
+              value:
+                type: about:blank
+                title: Recurso no encontrado
+                status: 404
+                detail: Consentimiento no encontrado
+                instance: https://dev.solventa4bits.com/web/v1/cuenta/consentimientos/OPEN_FINANCE
     DependenciaNoDisponible:
       description: Una dependencia aguas abajo (Identity Platform / CoreTransaccional) no respondió a tiempo.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }
+          examples:
+            dependenciaLenta:
+              summary: CoreTransaccional no respondió a tiempo
+              value:
+                type: about:blank
+                title: Dependencia no disponible
+                status: 503
+                detail: timeout esperando respuesta de svc-core
+                instance: https://dev.solventa4bits.com/web/v1/registro
 
   schemas:
 
@@ -365,6 +467,23 @@ components:
       type: object
       additionalProperties: false
       required: [email, password, tipoDocumento, numeroDocumento, primerNombre, primerApellido, fechaNacimiento, politicaVersion, aceptaTerminos, autorizaTratamientoDatos, autorizaDatosFinancieros]
+      examples:
+        - email: ana.rios@example.com
+          password: Clave-Segura-2026
+          tipoDocumento: CC
+          numeroDocumento: '1032456789'
+          primerNombre: Ana
+          segundoNombre: María
+          primerApellido: Ríos
+          segundoApellido: Gómez
+          fechaNacimiento: '1990-03-15'
+          telefono: '+573001234567'
+          politicaVersion: v1
+          aceptaTerminos: true
+          autorizaTratamientoDatos: true
+          politicaVersionTratamientoDatos: v1
+          autorizaDatosFinancieros: true
+          politicaVersionDatosFinancieros: v1
       properties:
         email: { type: string, format: email, maxLength: 254 }
         password: { type: string, format: password, minLength: 10, maxLength: 128 }
@@ -405,6 +524,22 @@ components:
       type: object
       additionalProperties: false
       required: [cuenta, sesion]
+      examples:
+        - cuenta:
+            clienteId: 3f2b8c1e-7d4a-4e5b-9a61-2c8d5f0b7e14
+            primerNombre: Ana
+            segundoNombre: María
+            primerApellido: Ríos
+            segundoApellido: Gómez
+            email: ana.rios@example.com
+            telefono: '+573001234567'
+            estado: ACTIVO
+            correoConfirmado: false
+          sesion:
+            accessToken: eyJhbGciOiJSUzI1NiIsImtpZCI6IjEifQ.eyJzdWIiOiJhbmEifQ.c2lnbmF0dXJh
+            tokenType: Bearer
+            expiresIn: 3600
+            refreshToken: AMf-vBzQ7Xk2nH4wT9pLr0eYd
       properties:
         cuenta: { $ref: '#/components/schemas/Cuenta' }
         sesion: { $ref: '#/components/schemas/Sesion' }
@@ -413,6 +548,9 @@ components:
       type: object
       additionalProperties: false
       required: [email, password]
+      examples:
+        - email: ana.rios@example.com
+          password: Clave-Segura-2026
       properties:
         email: { type: string, format: email }
         password: { type: string, format: password }
@@ -421,6 +559,11 @@ components:
       type: object
       additionalProperties: false
       required: [accessToken, tokenType, expiresIn, refreshToken]
+      examples:
+        - accessToken: eyJhbGciOiJSUzI1NiIsImtpZCI6IjEifQ.eyJzdWIiOiJhbmEifQ.c2lnbmF0dXJh
+          tokenType: Bearer
+          expiresIn: 3600
+          refreshToken: AMf-vBzQ7Xk2nH4wT9pLr0eYd
       properties:
         accessToken: { type: string, description: JWT de Identity Platform. }
         tokenType: { type: string, const: Bearer }
@@ -431,6 +574,16 @@ components:
       type: object
       additionalProperties: false
       required: [clienteId, primerNombre, primerApellido, email, estado, correoConfirmado]
+      examples:
+        - clienteId: 3f2b8c1e-7d4a-4e5b-9a61-2c8d5f0b7e14
+          primerNombre: Ana
+          segundoNombre: María
+          primerApellido: Ríos
+          segundoApellido: Gómez
+          email: ana.rios@example.com
+          telefono: '+573001234567'
+          estado: ACTIVO
+          correoConfirmado: true
       properties:
         clienteId: { type: string, format: uuid }
         primerNombre: { type: string }
@@ -447,6 +600,9 @@ components:
     Disponibilidad:
       type: object
       additionalProperties: false
+      examples:
+        - correoDisponible: false
+          documentoDisponible: true
       properties:
         correoDisponible: { type: [boolean, 'null'], description: 'null si no se consultó correo.' }
         documentoDisponible: { type: [boolean, 'null'], description: 'null si no se consultó documento.' }
@@ -455,6 +611,9 @@ components:
       type: object
       additionalProperties: false
       required: [scope, politicaVersion]
+      examples:
+        - scope: OPEN_FINANCE
+          politicaVersion: v1
       properties:
         scope: { $ref: '#/components/schemas/ConsentimientoScope' }
         politicaVersion: { type: string, maxLength: 20 }
@@ -463,6 +622,11 @@ components:
       type: object
       additionalProperties: false
       required: [scope, estado, vigente]
+      examples:
+        - scope: OPEN_FINANCE
+          estado: OTORGADO
+          vigente: true
+          actualizadoEn: '2026-10-06T14:32:10Z'
       properties:
         scope: { $ref: '#/components/schemas/ConsentimientoScope' }
         estado: { $ref: '#/components/schemas/EstadoConsentimientoEnum' }
@@ -494,6 +658,18 @@ components:
       type: object
       additionalProperties: false
       required: [datosCredito, cuestionarioHabitos]
+      examples:
+        - datosCredito:
+            valorCredito: 250000000
+            plazoMeses: 180
+            edad: 36
+            entidadAcreedora: Bancolombia
+            saldoInsoluto: 238500000
+          cuestionarioHabitos:
+            consumeTabaco: false
+            actividadFisica: REGULAR
+            condicionesPreexistentes: false
+            dependientesEconomicos: 2
       properties:
         datosCredito: { $ref: '#/components/schemas/DatosCredito' }
         cuestionarioHabitos: { $ref: '#/components/schemas/CuestionarioHabitos' }
@@ -544,6 +720,30 @@ components:
       type: object
       additionalProperties: false
       required: [id, estado, producto, oferta, vigenciaCotizacion, creadaEn]
+      examples:
+        - id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+          estado: VIGENTE
+          producto: VIDA_HIPOTECARIO
+          oferta:
+            primaMensual: 96500
+            primaBaseMensual: 112000
+            sumaAsegurada: 238500000
+            coberturaMeses: 180
+            moneda: COP
+            personalizado: true
+          perfilRiesgo:
+            nivelRiesgo: BAJO
+            factores:
+              - descripcion: Historial de pagos al día en los últimos 24 meses
+                efecto: POSITIVO
+                pesoRelativo: 0.4
+              - descripcion: Actividad física regular
+                efecto: POSITIVO
+                pesoRelativo: 0.2
+          vigenciaCotizacion:
+            desde: '2026-10-06T14:35:00Z'
+            hasta: '2026-11-05T14:35:00Z'
+          creadaEn: '2026-10-06T14:35:00Z'
       properties:
         id: { type: string }
         estado: { type: string, enum: [VIGENTE, EXPIRADA] }
@@ -578,10 +778,36 @@ components:
         status: { type: integer, minimum: 100, maximum: 599 }
         detail: { type: string }
         instance: { type: string, format: uri-reference }
-        errores:
-          type: array
-          items:
-            type: object
-            properties:
-              campo: { type: string }
-              mensaje: { type: string }
+      examples:
+        - type: about:blank
+          title: Conflicto
+          status: 409
+          detail: El correo ya está registrado
+          instance: https://dev.solventa4bits.com/web/v1/registro
+
+    ProblemaValidacion:
+      description: |
+        `Problema` con el detalle campo por campo. Solo lo devuelve la validación
+        del esquema de la solicitud (`400`); el resto de errores no lleva `errores`.
+      allOf:
+        - $ref: '#/components/schemas/Problema'
+        - type: object
+          properties:
+            errores:
+              type: array
+              items:
+                type: object
+                properties:
+                  campo: { type: string, description: Ruta del campo con error, por ejemplo `body.email`. }
+                  mensaje: { type: string }
+      examples:
+        - type: about:blank
+          title: Solicitud inválida
+          status: 400
+          detail: La solicitud no cumple el esquema
+          instance: https://dev.solventa4bits.com/web/v1/registro
+          errores:
+            - campo: body.email
+              mensaje: String should match pattern '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+            - campo: body.password
+              mensaje: String should have at least 10 characters
