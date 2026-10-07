@@ -1,10 +1,10 @@
 """Punto de entrada ASGI: ``uvicorn app.main:app``."""
-
+from fastapi.middleware.cors import CORSMiddleware
 from app.api.app import create_app
 
 app = create_app()
 
-from fastapi.middleware.cors import CORSMiddleware
+
 
 app.add_middleware(
     CORSMiddleware,
