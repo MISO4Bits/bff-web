@@ -122,7 +122,7 @@ def test_los_ejemplos_cumplen_su_esquema(openapi_spec):
         for ejemplo in esquema.get("examples", []):
             _validar(openapi_spec, nombre, ejemplo)
 
-    for nombre, respuesta in openapi_spec["components"]["responses"].items():
+    for respuesta in openapi_spec["components"]["responses"].values():
         for media in respuesta["content"].values():
             ref = media["schema"]["$ref"].rsplit("/", 1)[-1]
             for ejemplo in media.get("examples", {}).values():
