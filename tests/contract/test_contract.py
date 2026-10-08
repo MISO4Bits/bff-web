@@ -105,6 +105,27 @@ async def test_respuestas_cumplen_el_contrato(client, app, openapi_spec):
     _validar(openapi_spec, "Cuenta", confirmacion.json())
 
 
+async def test_documentos_legales_cumplen_el_contrato(client, openapi_spec):
+    params = {"mercado": "CO", "idioma": "es-CO"}
+    lista = await client.get("/v1/documentos-legales", params=params)
+    assert lista.status_code == 200
+    assert len(lista.json()) == 3
+    for documento in lista.json():
+        _validar(openapi_spec, "DocumentoLegal", documento)
+
+    version = await client.get("/v1/documentos-legales/terminos/versiones/V1", params=params)
+    assert version.status_code == 200
+    _validar(openapi_spec, "DocumentoLegal", version.json())
+
+    no_existe = await client.get("/v1/documentos-legales/terminos/versiones/V9", params=params)
+    assert no_existe.status_code == 404
+    _validar(openapi_spec, "Problema", no_existe.json())
+
+    invalido = await client.get("/v1/documentos-legales")
+    assert invalido.status_code == 400
+    _validar(openapi_spec, "ProblemaValidacion", invalido.json())
+
+
 async def test_errores_cumplen_problem_details(client, openapi_spec):
     sin_token = await client.get("/v1/cuenta")
     assert sin_token.status_code == 401

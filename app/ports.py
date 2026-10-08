@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from app.domain import ClienteCore, ConsentimientoVista, Cotizacion, CotizacionInput, RegistroInput
+from app.domain import (
+    ClienteCore,
+    ConsentimientoVista,
+    Cotizacion,
+    CotizacionInput,
+    DocumentoLegal,
+    RegistroInput,
+)
 
 
 @runtime_checkable
@@ -58,3 +65,12 @@ class CotizacionPort(Protocol):
     async def crear_cotizacion(self, cliente_id: str, entrada: CotizacionInput) -> Cotizacion: ...
 
     async def obtener_cotizacion(self, cliente_id: str, cotizacion_id: str) -> Cotizacion: ...
+
+
+@runtime_checkable
+class DocumentosLegalesPort(Protocol):
+    async def listar_vigentes(self, mercado: str, idioma: str) -> list[DocumentoLegal]: ...
+
+    async def obtener_version(
+        self, tipo: str, version: str, mercado: str, idioma: str
+    ) -> DocumentoLegal: ...

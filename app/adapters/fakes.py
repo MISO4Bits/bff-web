@@ -12,6 +12,7 @@ from app.domain import (
     ConsentimientoVista,
     Cotizacion,
     CotizacionInput,
+    DocumentoLegal,
     NoAutorizado,
     Oferta,
     RecursoNoEncontrado,
@@ -190,3 +191,73 @@ class FakeCotizacion:
         if cotizacion is None:
             raise RecursoNoEncontrado("Cotización no encontrada")
         return cotizacion
+
+
+_DOCUMENTOS_LEGALES_DE_EJEMPLO = (
+    DocumentoLegal(
+        tipo="terminos",
+        version="V1",
+        titulo="Términos y condiciones",
+        subtitulo="Las reglas de uso de Solventa. Está corto a propósito.",
+        base_legal="Ley 527 de 1999",
+        contenido=(
+            "<h3>1 · Quién te presta el servicio</h3>"
+            "<p>Solventa Colombia S.A.S. Somos intermediarios de seguros.</p>"
+            "<h3>2 · Tu firma electrónica</h3>"
+            "<p>Cuando aceptas desde tu cuenta, esa aceptación vale como tu firma.</p>"
+        ),
+        nota_pie="Aceptar estos términos no te compromete a comprar.",
+    ),
+    DocumentoLegal(
+        tipo="open-data",
+        version="V1",
+        titulo="Tratamiento de datos personales",
+        subtitulo="Qué datos tuyos usamos y para qué. Ley 1581 de 2012.",
+        base_legal="Ley 1581 de 2012",
+        contenido=(
+            "<h3>1 · Qué datos recogemos</h3>"
+            "<p>Tu nombre, documento, fecha de nacimiento, correo y celular.</p>"
+            "<h3>2 · Tus derechos</h3>"
+            "<p>Conocer, actualizar, corregir y borrar tus datos, o revocar esta autorización.</p>"
+        ),
+        nota_pie="Por ley del sector conservamos tu información mientras tengas póliza.",
+    ),
+    DocumentoLegal(
+        tipo="open-finance",
+        version="V1",
+        titulo="Consulta en centrales de riesgo",
+        subtitulo="Es opcional. Si la das, tu precio puede bajar.",
+        base_legal="Ley 1266 de 2008",
+        contenido=(
+            "<h3>1 · Qué autorizas</h3>"
+            "<p>Consultar y reportar tu comportamiento crediticio ante los operadores.</p>"
+            "<h3>2 · Puedes retirarla</h3>"
+            "<p>Quitas esta autorización cuando quieras desde tu perfil.</p>"
+        ),
+        nota_pie="Es opcional. Si no la autorizas puedes seguir igual.",
+    ),
+)
+
+
+class FakeDocumentosLegales:
+    """Textos de ejemplo abreviados (mercado ``CO``, idioma ``es-CO``) para correr
+    el BFF standalone. Los textos reales viven en svc-productos."""
+
+    def __init__(self, documentos: tuple[DocumentoLegal, ...] = _DOCUMENTOS_LEGALES_DE_EJEMPLO):
+        self._documentos = documentos
+
+    @staticmethod
+    def _hay_textos(mercado: str, idioma: str) -> bool:
+        return (mercado, idioma) == ("CO", "es-CO")
+
+    async def listar_vigentes(self, mercado: str, idioma: str) -> list[DocumentoLegal]:
+        return list(self._documentos) if self._hay_textos(mercado, idioma) else []
+
+    async def obtener_version(
+        self, tipo: str, version: str, mercado: str, idioma: str
+    ) -> DocumentoLegal:
+        if self._hay_textos(mercado, idioma):
+            for documento in self._documentos:
+                if (documento.tipo, documento.version) == (tipo, version):
+                    return documento
+        raise RecursoNoEncontrado("Documento legal no encontrado")
