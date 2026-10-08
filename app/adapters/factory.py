@@ -6,10 +6,16 @@ from dataclasses import dataclass
 
 from app.adapters.core_client import CoreClientAdapter
 from app.adapters.cotizacion_client import CotizacionClientAdapter
-from app.adapters.fakes import FakeCoreIdentity, FakeCotizacion, FakeIdentityProvider
+from app.adapters.fakes import (
+    FakeCoreIdentity,
+    FakeCotizacion,
+    FakeDocumentosLegales,
+    FakeIdentityProvider,
+)
 from app.adapters.identity_platform import IdentityPlatformAdapter
+from app.adapters.productos_client import ProductosClientAdapter
 from app.config import Settings
-from app.ports import CoreIdentityPort, CotizacionPort, IdentityProviderPort
+from app.ports import CoreIdentityPort, CotizacionPort, DocumentosLegalesPort, IdentityProviderPort
 from app.resilience import ResilientHttpClient, build_breaker
 from app.security import SessionIssuer
 
@@ -19,10 +25,11 @@ class Dependencias:
     identity: IdentityProviderPort
     core: CoreIdentityPort
     cotizacion: CotizacionPort
+    documentos_legales: DocumentosLegalesPort
     sessions: SessionIssuer
 
     async def aclose(self) -> None:
-        for adapter in (self.identity, self.core, self.cotizacion):
+        for adapter in (self.identity, self.core, self.cotizacion, self.documentos_legales):
             cerrar = getattr(adapter, "aclose", None)
             if cerrar is not None:
                 await cerrar()
@@ -36,7 +43,13 @@ def build_dependencias(settings: Settings) -> Dependencias:
     )
 
     if settings.adapters == "fake":
-        return Dependencias(FakeIdentityProvider(), FakeCoreIdentity(), FakeCotizacion(), sessions)
+        return Dependencias(
+            FakeIdentityProvider(),
+            FakeCoreIdentity(),
+            FakeCotizacion(),
+            FakeDocumentosLegales(),
+            sessions,
+        )
 
     if settings.adapters == "http":
         identity_http = ResilientHttpClient(
@@ -78,10 +91,24 @@ def build_dependencias(settings: Settings) -> Dependencias:
             max_connections=settings.http_max_connections,
             max_keepalive_connections=settings.http_max_keepalive_connections,
         )
+        productos_http = ResilientHttpClient(
+            settings.productos_base_url,
+            breaker=build_breaker(
+                "svc-productos",
+                fail_max=settings.circuit_fail_max,
+                reset_timeout=settings.circuit_reset_timeout_seconds,
+            ),
+            timeout=settings.http_timeout_seconds,
+            retries=settings.http_retries,
+            pool_timeout=settings.http_pool_timeout_seconds,
+            max_connections=settings.http_max_connections,
+            max_keepalive_connections=settings.http_max_keepalive_connections,
+        )
         return Dependencias(
             IdentityPlatformAdapter(identity_http, settings.identity_api_key),
             CoreClientAdapter(core_http),
             CotizacionClientAdapter(cotizacion_http),
+            ProductosClientAdapter(productos_http),
             sessions,
         )
 

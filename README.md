@@ -18,7 +18,7 @@ uvicorn app.main:app --reload --port 8081
 ```
 
 - Docs interactivas: <http://localhost:8081/docs> · contrato: <http://localhost:8081/openapi.yaml> · salud: <http://localhost:8081/health>
-- En modo `fake` (por defecto) el BFF **no necesita** svc-core ni Identity Platform: todo corre en memoria.
+- En modo `fake` (por defecto) el BFF **no necesita** svc-core, svc-productos ni Identity Platform: todo corre en memoria (los documentos legales son textos de ejemplo abreviados).
 
 ### Modos de adaptadores (variable `BFF_ADAPTERS`)
 
@@ -41,6 +41,7 @@ uvicorn app.main:app --port 8081
 |---|---|---|
 | `BFF_ADAPTERS` | `fake` | `fake` \| `http` |
 | `BFF_CORE_BASE_URL` | `http://localhost:8080` | svc-core (modo `http`) |
+| `BFF_PRODUCTOS_BASE_URL` | `http://localhost:8100` | svc-productos: documentos legales del registro (modo `http`) |
 | `BFF_IDENTITY_BASE_URL` / `BFF_IDENTITY_API_KEY` | — | Identity Platform (modo `http`) |
 | `BFF_HTTP_TIMEOUT_SECONDS` | `0.7` | timeout duro por dependencia (§6.1) |
 | `BFF_HTTP_RETRIES` | `2` | reintentos ante fallo transitorio |

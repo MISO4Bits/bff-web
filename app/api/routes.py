@@ -1,22 +1,26 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response, status
 
 from app.api.schemas import (
+    PATRON_IDIOMA,
+    PATRON_VERSION,
     ConsentimientoVistaOut,
     CotizacionOut,
     CotizacionRequest,
     CredencialesRequest,
     CuentaOut,
     DisponibilidadOut,
+    DocumentoLegalOut,
     OtorgarConsentimientoRequest,
     RefrescoRequest,
     RegistroRequest,
     RegistroResponse,
     SesionOut,
+    TipoDocumentoLegal,
 )
 from app.domain import (
     Claims,
@@ -27,7 +31,7 @@ from app.domain import (
     RegistroInput,
 )
 from app.logging_utils import sanear_para_log
-from app.services import OnboardingService
+from app.services import DocumentosLegalesService, OnboardingService
 
 logger = logging.getLogger("bff_web.api")
 router = APIRouter(prefix="/v1")
@@ -38,6 +42,18 @@ def get_service(request: Request) -> OnboardingService:
 
 
 ServiceDep = Annotated[OnboardingService, Depends(get_service)]
+
+
+def get_documentos_legales(request: Request) -> DocumentosLegalesService:
+    return request.app.state.documentos_legales
+
+
+DocumentosLegalesDep = Annotated[DocumentosLegalesService, Depends(get_documentos_legales)]
+MercadoQuery = Annotated[Literal["CO"], Query()]
+IdiomaQuery = Annotated[str, Query(pattern=PATRON_IDIOMA)]
+
+# Una versión publicada nunca cambia: el navegador la puede guardar para siempre.
+CACHE_VERSION_INMUTABLE = "public, max-age=31536000, immutable"
 
 
 async def claims_actuales(
@@ -260,3 +276,44 @@ async def obtener_cotizacion(
     )
     cotizacion = await service.obtener_cotizacion(claims.cliente_id, cotizacion_id)
     return CotizacionOut.model_validate(cotizacion)
+
+
+@router.get(
+    "/documentos-legales",
+    response_model=list[DocumentoLegalOut],
+    response_model_exclude_none=True,
+    tags=["Documentos legales"],
+)
+async def listar_documentos_legales(
+    service: DocumentosLegalesDep,
+    mercado: MercadoQuery,
+    idioma: IdiomaQuery = "es-CO",
+) -> list[DocumentoLegalOut]:
+    logger.info("GET /v1/documentos-legales: solicitud recibida mercado=%s", mercado)
+    documentos = await service.listar_vigentes(mercado, idioma)
+    return [DocumentoLegalOut.model_validate(d) for d in documentos]
+
+
+@router.get(
+    "/documentos-legales/{tipo}/versiones/{version}",
+    response_model=DocumentoLegalOut,
+    response_model_exclude_none=True,
+    tags=["Documentos legales"],
+)
+async def obtener_version_documento_legal(
+    tipo: TipoDocumentoLegal,
+    version: Annotated[str, Path(pattern=PATRON_VERSION)],
+    service: DocumentosLegalesDep,
+    response: Response,
+    mercado: MercadoQuery,
+    idioma: IdiomaQuery = "es-CO",
+) -> DocumentoLegalOut:
+    logger.info(
+        "GET /v1/documentos-legales/%s/versiones/%s: solicitud recibida mercado=%s",
+        tipo,
+        version,
+        mercado,
+    )
+    documento = await service.obtener_version(tipo, version, mercado, idioma)
+    response.headers["Cache-Control"] = CACHE_VERSION_INMUTABLE
+    return DocumentoLegalOut.model_validate(documento)
