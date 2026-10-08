@@ -37,6 +37,8 @@ tags:
     description: Consentimientos del cliente autenticado.
   - name: Cotización
     description: Cotización de seguro de vida sobre crédito hipotecario (orquesta hacia Cotización y Rating).
+  - name: Documentos legales
+    description: Textos legales versionados que el registro muestra antes de pedir la aceptación (los publica Productos y Configuración de Mercado).
 
 security:
   - clienteAuth: []
@@ -254,6 +256,76 @@ paths:
         '401': { $ref: '#/components/responses/NoAutorizado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
 
+  /v1/documentos-legales:
+    get:
+      operationId: listarDocumentosLegales
+      tags: [Documentos legales]
+      summary: Documentos legales vigentes, con su contenido
+      description: |
+        **Público** (no requiere token): el registro los muestra antes de que exista
+        una sesión.
+
+        Devuelve la versión vigente de cada documento (`terminos`, `open-data`,
+        `open-finance`) ya con el contenido completo, en el orden en que el registro
+        los presenta. Una sola llamada deja listos los tres modales sin más viajes a
+        la red. Proxya a Productos y Configuración de Mercado sin transformar nada.
+
+        **Aceptación.** El BFF no registra qué aceptó el cliente. La web devuelve la
+        `version` de cada documento que mostró en los campos `politicaVersion*` de
+        `POST /v1/registro`, y CoreTransaccional la guarda como evidencia.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Mercado'
+        - $ref: '#/components/parameters/Idioma'
+      responses:
+        '200':
+          description: Versión vigente de cada documento del mercado e idioma.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DocumentoLegal' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
+
+  /v1/documentos-legales/{tipo}/versiones/{version}:
+    get:
+      operationId: obtenerVersionDocumentoLegal
+      tags: [Documentos legales]
+      summary: Una versión exacta de un documento (inmutable)
+      description: |
+        **Público** (no requiere token). Devuelve el texto exacto de una versión ya
+        publicada: sirve para mostrar lo que el cliente aceptó aunque exista una
+        versión posterior.
+
+        Una versión publicada nunca cambia, por eso la respuesta se puede guardar
+        indefinidamente (`Cache-Control: immutable`).
+      security: []
+      parameters:
+        - name: tipo
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/TipoDocumentoLegal' }
+        - name: version
+          in: path
+          required: true
+          schema: { type: string, pattern: '^V[1-9][0-9]*$', examples: [V1] }
+        - $ref: '#/components/parameters/Mercado'
+        - $ref: '#/components/parameters/Idioma'
+      responses:
+        '200':
+          description: Versión solicitada.
+          headers:
+            Cache-Control:
+              description: Una versión publicada nunca cambia.
+              schema: { type: string, example: 'public, max-age=31536000, immutable' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentoLegal' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
+
   /v1/cotizaciones:
     post:
       operationId: crearCotizacion
@@ -320,6 +392,16 @@ components:
         sesión del BFF completamente confirmada.
 
   parameters:
+    Mercado:
+      name: mercado
+      in: query
+      required: true
+      schema: { type: string, enum: [CO] }
+    Idioma:
+      name: idioma
+      in: query
+      required: false
+      schema: { type: string, pattern: '^[a-z]{2}-[A-Z]{2}$', default: es-CO, examples: [es-CO] }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -447,7 +529,7 @@ components:
                 detail: Consentimiento no encontrado
                 instance: https://dev.solventa4bits.com/web/v1/cuenta/consentimientos/OPEN_FINANCE
     DependenciaNoDisponible:
-      description: Una dependencia aguas abajo (Identity Platform / CoreTransaccional) no respondió a tiempo.
+      description: Una dependencia aguas abajo (Identity Platform / CoreTransaccional / Cotización y Rating / Productos y Configuración de Mercado) no respondió a tiempo.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }
@@ -596,6 +678,47 @@ components:
         correoConfirmado:
           type: boolean
           description: BITS-93 AC-3 — no condiciona cotización ni coberturas, solo la formalización del contrato.
+
+    TipoDocumentoLegal:
+      type: string
+      enum: [terminos, open-data, open-finance]
+      description: |
+        - `terminos` — términos y condiciones y aviso de privacidad.
+        - `open-data` — tratamiento de datos personales.
+        - `open-finance` — consulta en centrales de riesgo (datos financieros).
+
+    DocumentoLegal:
+      type: object
+      additionalProperties: false
+      required: [tipo, version, titulo, baseLegal, contenido]
+      examples:
+        - tipo: open-finance
+          version: V1
+          titulo: Consulta en centrales de riesgo
+          subtitulo: Es opcional. Si la das, tu precio puede bajar.
+          baseLegal: Ley 1266 de 2008
+          contenido: '<h3>1 · Qué autorizas</h3><p>Consultar y reportar tu comportamiento crediticio ante los operadores de información.</p><h3>2 · Puedes retirarla</h3><p>Quitas esta autorización cuando quieras desde tu perfil.</p>'
+          notaPie: Es opcional. Si no la autorizas puedes seguir igual.
+      properties:
+        tipo: { $ref: '#/components/schemas/TipoDocumentoLegal' }
+        version:
+          type: string
+          pattern: '^V[1-9][0-9]*$'
+          description: Versión publicada (`V1`, `V2`, …). La web la envía de vuelta al registrar la aceptación.
+        titulo: { type: string }
+        subtitulo: { type: string, description: Se omite cuando no tiene. }
+        baseLegal: { type: string, description: 'Ley que respalda el documento, por ejemplo `Ley 1581 de 2012`.' }
+        contenido:
+          type: string
+          description: |
+            Cuerpo del documento con formato (HTML).
+            Etiquetas permitidas: `h3`, `p`, `ul`, `ol`, `li`, `strong`, `em`, `a`, `span`.
+            Atributos permitidos: `href` en `a` (solo esquemas `https` y `mailto`) y
+            `class` (solo valores con prefijo `legal-`, por ejemplo `legal-highlight`).
+            No se permiten `style`, `script`, etiquetas de estilo, imágenes ni
+            manejadores de eventos. La web define el significado visual de cada clase
+            `legal-*` y debe sanear el HTML con esta misma lista antes de pintarlo.
+        notaPie: { type: string, description: Texto de pie del documento. Se omite cuando no tiene. }
 
     Disponibilidad:
       type: object

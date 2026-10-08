@@ -14,6 +14,9 @@ _TELEFONO = r"^\+?[0-9]{7,15}$"
 _DOCUMENTO = r"^[0-9A-Za-z-]+$"
 
 Scope = Literal["OPEN_FINANCE", "OPEN_DATA"]
+TipoDocumentoLegal = Literal["terminos", "open-data", "open-finance"]
+PATRON_VERSION = r"^V[1-9][0-9]*$"
+PATRON_IDIOMA = r"^[a-z]{2}-[A-Z]{2}$"
 
 
 class _Model(BaseModel):
@@ -92,6 +95,16 @@ class ConsentimientoVistaOut(_Model):
     estado: Literal["OTORGADO", "REVOCADO", "NO_OTORGADO"]
     vigente: bool
     actualizado_en: datetime | None = None
+
+
+class DocumentoLegalOut(_Model):
+    tipo: TipoDocumentoLegal
+    version: str
+    titulo: str
+    subtitulo: str | None = None
+    base_legal: str
+    contenido: str
+    nota_pie: str | None = None
 
 
 # --- cotización (orquesta hacia Cotización y Rating — mismo contrato de

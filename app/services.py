@@ -9,12 +9,18 @@ from app.domain import (
     Cotizacion,
     CotizacionInput,
     Cuenta,
+    DocumentoLegal,
     RegistroInput,
     ReglaNegocio,
     Sesion,
 )
 from app.logging_utils import sanear_para_log
-from app.ports import CoreIdentityPort, CotizacionPort, IdentityProviderPort
+from app.ports import (
+    CoreIdentityPort,
+    CotizacionPort,
+    DocumentosLegalesPort,
+    IdentityProviderPort,
+)
 from app.security import SessionIssuer
 
 logger = logging.getLogger("bff_web.onboarding")
@@ -141,3 +147,20 @@ class OnboardingService:
             cliente_id,
         )
         return await self._cotizacion.obtener_cotizacion(cliente_id, cotizacion_id)
+
+
+class DocumentosLegalesService:
+    """Textos legales del registro. El BFF los reenvía sin transformarlos: el
+    versionado y el contenido son de Productos y Configuración de Mercado, y la
+    aceptación la registra CoreTransaccional con lo que envía la web."""
+
+    def __init__(self, documentos: DocumentosLegalesPort) -> None:
+        self._documentos = documentos
+
+    async def listar_vigentes(self, mercado: str, idioma: str) -> list[DocumentoLegal]:
+        return await self._documentos.listar_vigentes(mercado, idioma)
+
+    async def obtener_version(
+        self, tipo: str, version: str, mercado: str, idioma: str
+    ) -> DocumentoLegal:
+        return await self._documentos.obtener_version(tipo, version, mercado, idioma)

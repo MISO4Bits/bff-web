@@ -89,6 +89,19 @@ class ConsentimientoVista:
 
 
 @dataclass(frozen=True)
+class DocumentoLegal:
+    """Texto legal tal cual lo publica Productos y Configuración de Mercado."""
+
+    tipo: str
+    version: str
+    titulo: str
+    base_legal: str
+    contenido: str
+    subtitulo: str | None = None
+    nota_pie: str | None = None
+
+
+@dataclass(frozen=True)
 class Claims:
     sub: str
     cliente_id: str

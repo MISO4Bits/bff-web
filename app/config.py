@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     identity_api_key: str = "fake-api-key"
     core_base_url: str = "http://localhost:8080"
     cotizacion_base_url: str = "http://localhost:8090"
+    productos_base_url: str = "http://localhost:8100"
 
     # Patrones de resiliencia hacia dependencias (§6.1: timeout duro 700 ms)
     http_timeout_seconds: float = 0.7
