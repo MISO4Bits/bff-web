@@ -72,6 +72,87 @@ async def test_registrar_correo_duplicado_no_toca_core(service, core):
     assert len(core._clientes) == 1
 
 
+async def test_registrar_correo_duplicado_indica_el_campo(service):
+    await service.registrar(DATOS)
+    with pytest.raises(Conflicto) as exc:
+        await service.registrar(DATOS)
+    assert [e["campo"] for e in exc.value.errores] == ["correo"]
+
+
+async def test_registrar_documento_duplicado_indica_el_campo_y_revierte_la_credencial(
+    service, identity
+):
+    await service.registrar(DATOS)
+    otro = RegistroInput(**{**DATOS.__dict__, "email": "otra@example.com"})
+    with pytest.raises(Conflicto) as exc:
+        await service.registrar(otro)
+    assert [e["campo"] for e in exc.value.errores] == ["documento"]
+    assert "otra@example.com" not in identity._por_email
+
+
+async def test_reintento_con_idempotency_key_devuelve_la_misma_cuenta(service, core):
+    primera, _ = await service.registrar(DATOS, "clave-1")
+    segunda, sesion = await service.registrar(DATOS, "clave-1")
+
+    assert segunda.cliente_id == primera.cliente_id
+    assert sesion.access_token
+    assert len(core._clientes) == 1
+
+
+async def test_reintento_sin_idempotency_key_sigue_siendo_conflicto(service):
+    await service.registrar(DATOS)
+    with pytest.raises(Conflicto):
+        await service.registrar(DATOS)
+
+
+async def test_reintento_con_clave_y_otra_contrasena_es_conflicto(service):
+    await service.registrar(DATOS, "clave-1")
+    ajeno = RegistroInput(**{**DATOS.__dict__, "password": "otraClave123"})
+    with pytest.raises(Conflicto) as exc:
+        await service.registrar(ajeno, "clave-1")
+    assert [e["campo"] for e in exc.value.errores] == ["correo"]
+
+
+async def test_credencial_huerfana_se_completa_con_idempotency_key(service, identity, core):
+    await identity.registrar(DATOS.email, DATOS.password)  # quedó sin cliente en Core
+
+    cuenta, _ = await service.registrar(DATOS, "clave-1")
+
+    assert cuenta.cliente_id in core._clientes
+
+
+async def test_credencial_huerfana_no_se_borra_si_core_vuelve_a_fallar(identity, core):
+    sub = await identity.registrar(DATOS.email, DATOS.password)
+
+    async def _boom(*_a, **_k):
+        raise DependenciaNoDisponible("core caído")
+
+    core.registrar_cliente = _boom  # type: ignore[assignment]
+    service = OnboardingService(identity, core, FakeCotizacion(), SessionIssuer("secreto"))
+
+    with pytest.raises(DependenciaNoDisponible):
+        await service.registrar(DATOS, "clave-1")
+
+    assert DATOS.email in identity._por_email
+    assert identity._por_email[DATOS.email][0] == sub
+
+
+async def test_registrar_pasa_la_idempotency_key_a_core(identity, core):
+    recibida = {}
+    original = core.registrar_cliente
+
+    async def _espia(identity_ref, datos, idempotency_key=None):
+        recibida["clave"] = idempotency_key
+        return await original(identity_ref, datos, idempotency_key)
+
+    core.registrar_cliente = _espia  # type: ignore[assignment]
+    service = OnboardingService(identity, core, FakeCotizacion(), SessionIssuer("secreto"))
+
+    await service.registrar(DATOS, "clave-9")
+
+    assert recibida["clave"] == "clave-9"
+
+
 async def test_registrar_compensa_si_core_falla(identity, core):
     async def _boom(*_a, **_k):
         raise DependenciaNoDisponible("core caído")

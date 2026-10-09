@@ -182,9 +182,12 @@ class BffError(Exception):
     status = 500
     title = "Error interno"
 
-    def __init__(self, detail: str | None = None) -> None:
+    def __init__(
+        self, detail: str | None = None, *, errores: list[dict[str, str]] | None = None
+    ) -> None:
         super().__init__(detail or self.title)
         self.detail = detail
+        self.errores = errores
 
 
 class SolicitudInvalida(BffError):
@@ -205,6 +208,17 @@ class RecursoNoEncontrado(BffError):
 class Conflicto(BffError):
     status = 409
     title = "Conflicto"
+
+    _MENSAJES = {
+        "correo": "El correo ya está registrado",
+        "documento": "El documento ya está registrado",
+    }
+
+    @classmethod
+    def por_campo(cls, campo: str) -> Conflicto:
+        """Conflicto de registro que indica el campo repetido, sin datos de otra persona."""
+        mensaje = cls._MENSAJES[campo]
+        return cls(mensaje, errores=[{"campo": campo, "mensaje": mensaje}])
 
 
 class ReglaNegocio(BffError):

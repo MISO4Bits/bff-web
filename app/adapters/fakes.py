@@ -29,7 +29,7 @@ class FakeIdentityProvider:
 
     async def registrar(self, email: str, password: str) -> str:
         if email in self._por_email:
-            raise Conflicto("El correo ya está registrado")
+            raise Conflicto.por_campo("correo")
         sub = f"sub-{uuid.uuid4().hex[:12]}"
         self._por_email[email] = (sub, password)
         return sub
@@ -66,12 +66,14 @@ class FakeCoreIdentity:
         self._por_correo: set[str] = set()
         self._consentimientos: dict[tuple[str, str], ConsentimientoVista] = {}
 
-    async def registrar_cliente(self, identity_ref: str, datos: RegistroInput) -> ClienteCore:
+    async def registrar_cliente(
+        self, identity_ref: str, datos: RegistroInput, idempotency_key: str | None = None
+    ) -> ClienteCore:
         clave = (datos.tipo_documento, datos.numero_documento)
         if datos.email in self._por_correo:
-            raise Conflicto("El correo ya está registrado")
+            raise Conflicto.por_campo("correo")
         if clave in self._por_documento:
-            raise Conflicto("El documento ya está registrado")
+            raise Conflicto.por_campo("documento")
         cliente = ClienteCore(
             id=str(uuid.uuid4()),
             primer_nombre=datos.primer_nombre,

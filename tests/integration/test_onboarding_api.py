@@ -81,6 +81,35 @@ async def test_registro_duplicado_devuelve_409(client):
     await client.post("/v1/registro", json=REGISTRO_VALIDO)
     repetido = await client.post("/v1/registro", json=REGISTRO_VALIDO)
     assert repetido.status_code == 409
+    assert repetido.json()["errores"] == [
+        {"campo": "correo", "mensaje": "El correo ya está registrado"}
+    ]
+
+
+async def test_registro_con_documento_repetido_indica_el_campo_documento(client):
+    await client.post("/v1/registro", json=REGISTRO_VALIDO)
+    repetido = await client.post(
+        "/v1/registro", json={**REGISTRO_VALIDO, "email": "otra.persona@example.com"}
+    )
+    assert repetido.status_code == 409
+    assert repetido.json()["errores"][0]["campo"] == "documento"
+
+
+async def test_reintento_con_idempotency_key_devuelve_la_misma_cuenta(client):
+    cabeceras = {"Idempotency-Key": "reintento-1"}
+    primero = await client.post("/v1/registro", json=REGISTRO_VALIDO, headers=cabeceras)
+    segundo = await client.post("/v1/registro", json=REGISTRO_VALIDO, headers=cabeceras)
+
+    assert primero.status_code == 201
+    assert segundo.status_code == 201
+    assert segundo.json()["cuenta"]["clienteId"] == primero.json()["cuenta"]["clienteId"]
+
+
+async def test_idempotency_key_demasiado_larga_devuelve_400(client):
+    resp = await client.post(
+        "/v1/registro", json=REGISTRO_VALIDO, headers={"Idempotency-Key": "x" * 65}
+    )
+    assert resp.status_code == 400
 
 
 async def test_registro_sin_telefono_devuelve_400(client):

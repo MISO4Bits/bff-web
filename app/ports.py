@@ -39,7 +39,9 @@ class IdentityProviderPort(Protocol):
 
 @runtime_checkable
 class CoreIdentityPort(Protocol):
-    async def registrar_cliente(self, identity_ref: str, datos: RegistroInput) -> ClienteCore: ...
+    async def registrar_cliente(
+        self, identity_ref: str, datos: RegistroInput, idempotency_key: str | None = None
+    ) -> ClienteCore: ...
 
     async def obtener_cliente(self, cliente_id: str) -> ClienteCore: ...
 

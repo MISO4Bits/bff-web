@@ -31,7 +31,7 @@ class IdentityPlatformAdapter:
             mensaje = _mensaje_error(resp)
             if "EMAIL_EXISTS" in mensaje:
                 logger.info("Identity Platform: correo ya registrado")
-                raise Conflicto("El correo ya está registrado")
+                raise Conflicto.por_campo("correo")
             logger.info("Identity Platform: registro rechazado (%s)", mensaje)
             raise SolicitudInvalida(mensaje or "registro rechazado por el proveedor")
         _asegurar_ok(resp)

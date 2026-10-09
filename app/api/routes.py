@@ -89,7 +89,11 @@ IdentityTokenDep = Annotated[str, Depends(identity_token_actual)]
     status_code=status.HTTP_201_CREATED,
     tags=["Registro"],
 )
-async def registrarse(payload: RegistroRequest, service: ServiceDep) -> RegistroResponse:
+async def registrarse(
+    payload: RegistroRequest,
+    service: ServiceDep,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=64)] = None,
+) -> RegistroResponse:
     logger.info("POST /v1/registro: solicitud recibida")
     entrada = RegistroInput(
         email=payload.email,
@@ -108,7 +112,7 @@ async def registrarse(payload: RegistroRequest, service: ServiceDep) -> Registro
         politica_version_tratamiento_datos=payload.politica_version_tratamiento_datos,
         politica_version_datos_financieros=payload.politica_version_datos_financieros,
     )
-    cuenta, sesion = await service.registrar(entrada)
+    cuenta, sesion = await service.registrar(entrada, idempotency_key)
     return RegistroResponse(
         cuenta=CuentaOut.model_validate(cuenta),
         sesion=SesionOut.model_validate(sesion),

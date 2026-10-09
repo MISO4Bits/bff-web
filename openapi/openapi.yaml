@@ -58,7 +58,13 @@ paths:
         3. Devuelve una sesión iniciada.
 
         Si el correo o el documento ya existen responde `409` y no deja nada creado
-        (revierte la credencial si alcanzó a crearse). Idempotente con `Idempotency-Key`.
+        (revierte la credencial si alcanzó a crearse). El campo repetido viaja en
+        `errores[].campo` (`correo` o `documento`), sin revelar datos de otra persona.
+
+        **Reintentos (`Idempotency-Key`).** Si el cliente reintenta con la misma clave
+        porque perdió la respuesta, y envía el mismo correo y contraseña, recibe `201`
+        con la cuenta ya creada y una sesión nueva, sin duplicar nada. Con otra
+        contraseña, o sin clave, un correo ya registrado es un `409` normal.
       security: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -406,7 +412,9 @@ components:
       name: Idempotency-Key
       in: header
       required: false
-      description: Clave de idempotencia para reintentar el registro sin duplicar.
+      description: |
+        Clave de idempotencia para reintentar el registro sin duplicar. Genere una
+        clave por intento de registro y reutilícela solo al reintentar ese mismo intento.
       schema: { type: string, maxLength: 64 }
 
   responses:
@@ -471,10 +479,10 @@ components:
                 detail: credenciales inválidas
                 instance: https://dev.solventa4bits.com/web/v1/sesiones
     Conflicto:
-      description: El correo o el documento ya están registrados.
+      description: El correo o el documento ya están registrados. `errores[0].campo` dice cuál.
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/Problema' }
+          schema: { $ref: '#/components/schemas/ProblemaConflicto' }
           examples:
             correoRegistrado:
               summary: El correo ya tiene una cuenta
@@ -484,6 +492,9 @@ components:
                 status: 409
                 detail: El correo ya está registrado
                 instance: https://dev.solventa4bits.com/web/v1/registro
+                errores:
+                  - campo: correo
+                    mensaje: El correo ya está registrado
             documentoRegistrado:
               summary: El documento ya pertenece a un cliente
               value:
@@ -492,6 +503,9 @@ components:
                 status: 409
                 detail: El documento ya está registrado
                 instance: https://dev.solventa4bits.com/web/v1/registro
+                errores:
+                  - campo: documento
+                    mensaje: El documento ya está registrado
     EntidadNoProcesable:
       description: La solicitud es válida pero incumple una regla de negocio.
       content:
@@ -907,6 +921,34 @@ components:
           status: 409
           detail: El correo ya está registrado
           instance: https://dev.solventa4bits.com/web/v1/registro
+
+    ProblemaConflicto:
+      description: |
+        `Problema` de un conflicto de registro (`409`). `errores` trae un único elemento
+        con el campo repetido.
+      allOf:
+        - $ref: '#/components/schemas/Problema'
+        - type: object
+          required: [errores]
+          properties:
+            errores:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [campo, mensaje]
+                properties:
+                  campo: { type: string, enum: [correo, documento] }
+                  mensaje: { type: string }
+      examples:
+        - type: about:blank
+          title: Conflicto
+          status: 409
+          detail: El correo ya está registrado
+          instance: https://dev.solventa4bits.com/web/v1/registro
+          errores:
+            - campo: correo
+              mensaje: El correo ya está registrado
 
     ProblemaValidacion:
       description: |

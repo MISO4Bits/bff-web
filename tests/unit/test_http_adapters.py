@@ -128,8 +128,9 @@ async def test_identity_registrar_email_existente():
     )
     adapter = _idp()
     try:
-        with pytest.raises(Conflicto):
+        with pytest.raises(Conflicto) as exc:
             await adapter.registrar("a@b.com", "x" * 10)
+        assert [e["campo"] for e in exc.value.errores] == ["correo"]
     finally:
         await adapter.aclose()
 
@@ -185,6 +186,51 @@ async def test_core_registrar_cliente_ok_y_conflicto():
         ruta.mock(return_value=httpx.Response(409, json={"detail": "existe"}))
         with pytest.raises(Conflicto):
             await adapter.registrar_cliente("sub-1", DATOS)
+    finally:
+        await adapter.aclose()
+
+
+@pytest.mark.parametrize(
+    ("cuerpo", "campo"),
+    [
+        ({"errores": [{"campo": "correo", "mensaje": "x"}]}, "correo"),
+        ({"errores": [{"campo": "documento", "mensaje": "x"}]}, "documento"),
+        ({"detail": "existe"}, "documento"),
+        ({"errores": [{"campo": "otro", "mensaje": "x"}]}, "documento"),
+    ],
+)
+@respx.mock
+async def test_core_conflicto_indica_el_campo_repetido(cuerpo, campo):
+    respx.post(f"{CORE}/clientes").mock(return_value=httpx.Response(409, json=cuerpo))
+    adapter = _core()
+    try:
+        with pytest.raises(Conflicto) as exc:
+            await adapter.registrar_cliente("sub-1", DATOS)
+        assert [e["campo"] for e in exc.value.errores] == [campo]
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_core_registrar_cliente_reenvia_la_idempotency_key():
+    ruta = respx.post(f"{CORE}/clientes").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "id": "c1",
+                "primerNombre": "Ana",
+                "primerApellido": "Ríos",
+                "email": "ana@example.com",
+                "estado": "ACTIVO",
+            },
+        )
+    )
+    adapter = _core()
+    try:
+        await adapter.registrar_cliente("sub-1", DATOS, "clave-1")
+        assert ruta.calls.last.request.headers["Idempotency-Key"] == "clave-1"
+        await adapter.registrar_cliente("sub-1", DATOS)
+        assert "Idempotency-Key" not in ruta.calls.last.request.headers
     finally:
         await adapter.aclose()
 
