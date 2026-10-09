@@ -22,6 +22,7 @@ from app.domain import (
     NoAutorizado,
     RecursoNoEncontrado,
     RegistroInput,
+    ReglaNegocio,
     SolicitudInvalida,
 )
 from app.resilience import ResilientHttpClient, build_breaker
@@ -303,28 +304,60 @@ async def test_identity_enviar_verificacion_ok_y_token_invalido():
         await adapter.aclose()
 
 
+@pytest.mark.parametrize("mensaje", ["INVALID_OOB_CODE", "EXPIRED_OOB_CODE"])
 @respx.mock
-async def test_identity_verificar_correo_ok_no_verificado_y_token_invalido():
-    ruta = respx.post(f"{IDP}/v1/accounts:lookup")
+async def test_identity_confirmar_correo_rechaza_codigos_invalidos_o_vencidos(mensaje):
+    respx.post(f"{IDP}/v1/accounts:update").mock(
+        return_value=httpx.Response(400, json={"error": {"message": mensaje}})
+    )
     adapter = _idp()
     try:
-        ruta.mock(
-            return_value=httpx.Response(
-                200, json={"users": [{"localId": "sub-1", "emailVerified": True}]}
-            )
+        with pytest.raises(ReglaNegocio, match="ya se usó"):
+            await adapter.confirmar_correo("codigo-1234567890")
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_identity_confirmar_correo_devuelve_el_sub_y_envia_el_codigo():
+    ruta = respx.post(f"{IDP}/v1/accounts:update").mock(
+        return_value=httpx.Response(
+            200, json={"localId": "sub-1", "email": "a@b.com", "emailVerified": True}
         )
-        assert await adapter.verificar_correo("token-1") == ("sub-1", True)
+    )
+    adapter = _idp()
+    try:
+        assert await adapter.confirmar_correo("codigo-1234567890") == "sub-1"
+        assert json.loads(ruta.calls.last.request.content) == {"oobCode": "codigo-1234567890"}
 
-        ruta.mock(return_value=httpx.Response(200, json={"users": [{"localId": "sub-1"}]}))
-        assert await adapter.verificar_correo("token-1") == ("sub-1", False)
+        # Si Identity Platform no repite emailVerified, el 200 basta.
+        ruta.mock(return_value=httpx.Response(200, json={"localId": "sub-2"}))
+        assert await adapter.confirmar_correo("codigo-1234567890") == "sub-2"
+    finally:
+        await adapter.aclose()
 
-        ruta.mock(return_value=httpx.Response(200, json={"users": []}))
-        with pytest.raises(NoAutorizado):
-            await adapter.verificar_correo("token-1")
 
-        ruta.mock(return_value=httpx.Response(400, json={"error": {"message": "INVALID_ID_TOKEN"}}))
-        with pytest.raises(NoAutorizado):
-            await adapter.verificar_correo("token-malo")
+@pytest.mark.parametrize(
+    "cuerpo", [{"email": "a@b.com"}, {"localId": "sub-1", "emailVerified": False}]
+)
+@respx.mock
+async def test_identity_confirmar_correo_sin_confirmacion_real_es_error(cuerpo):
+    respx.post(f"{IDP}/v1/accounts:update").mock(return_value=httpx.Response(200, json=cuerpo))
+    adapter = _idp()
+    try:
+        with pytest.raises(BffError, match="no confirmó"):
+            await adapter.confirmar_correo("codigo-1234567890")
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_identity_confirmar_correo_falla_del_proveedor():
+    respx.post(f"{IDP}/v1/accounts:update").mock(return_value=httpx.Response(403, json={}))
+    adapter = _idp()
+    try:
+        with pytest.raises(BffError):
+            await adapter.confirmar_correo("codigo-1234567890")
     finally:
         await adapter.aclose()
 

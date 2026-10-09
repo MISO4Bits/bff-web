@@ -178,6 +178,9 @@ class Cotizacion:
 # --- errores de aplicación (se traducen a RFC 9457 en la capa API) ---
 
 
+MENSAJE_ENLACE_INVALIDO = "El enlace de confirmación no es válido, ya se usó o venció"
+
+
 class BffError(Exception):
     status = 500
     title = "Error interno"

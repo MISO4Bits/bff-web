@@ -47,6 +47,10 @@ class RegistroRequest(_Model):
     politica_version_datos_financieros: str | None = Field(default=None, max_length=20)
 
 
+class ConfirmacionRequest(_Model):
+    oob_code: str = Field(min_length=10, max_length=512, pattern=r"^[A-Za-z0-9_-]+$")
+
+
 class CredencialesRequest(_Model):
     email: str = Field(pattern=_EMAIL)
     password: str

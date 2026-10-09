@@ -97,12 +97,14 @@ async def test_respuestas_cumplen_el_contrato(client, app, openapi_spec):
     _validar(openapi_spec, "Disponibilidad", disponibilidad.json())
 
     sub = app.state.deps.identity._por_email[REGISTRO_VALIDO["email"]][0]
-    app.state.deps.identity.marcar_verificado(sub)
-    confirmacion = await client.post(
-        "/v1/registro/confirmacion", headers={"Authorization": f"Bearer {sub}"}
-    )
+    codigo = app.state.deps.identity.emitir_codigo_verificacion(sub)
+    confirmacion = await client.post("/v1/registro/confirmacion", json={"oobCode": codigo})
     assert confirmacion.status_code == 200
     _validar(openapi_spec, "Cuenta", confirmacion.json())
+
+    repetido = await client.post("/v1/registro/confirmacion", json={"oobCode": codigo})
+    assert repetido.status_code == 422
+    _validar(openapi_spec, "Problema", repetido.json())
 
 
 async def test_documentos_legales_cumplen_el_contrato(client, openapi_spec):

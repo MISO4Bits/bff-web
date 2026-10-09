@@ -32,8 +32,10 @@ class IdentityProviderPort(Protocol):
         """Pide a Identity Platform reenviar el correo de verificación (AC-4)."""
         ...
 
-    async def verificar_correo(self, id_token: str) -> tuple[str, bool]:
-        """Devuelve ``(sub, email_verified)`` según Identity Platform lo reporte ahora mismo."""
+    async def confirmar_correo(self, oob_code: str) -> str:
+        """Canjea el código de un solo uso del enlace de verificación, deja el correo
+        verificado en Identity Platform y devuelve el ``sub`` del usuario. Lanza
+        ``ReglaNegocio`` si el código no es válido, ya se usó o venció."""
         ...
 
 

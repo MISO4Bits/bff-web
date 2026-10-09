@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.domain import (
+    MENSAJE_ENLACE_INVALIDO,
     ClienteCore,
     Conflicto,
     ConsentimientoVista,
@@ -17,6 +18,7 @@ from app.domain import (
     Oferta,
     RecursoNoEncontrado,
     RegistroInput,
+    ReglaNegocio,
     Vigencia,
 )
 
@@ -26,6 +28,7 @@ class FakeIdentityProvider:
         # email -> (sub, password)
         self._por_email: dict[str, tuple[str, str]] = {}
         self._verificados: set[str] = set()
+        self._codigos: dict[str, str] = {}
 
     async def registrar(self, email: str, password: str) -> str:
         if email in self._por_email:
@@ -44,18 +47,22 @@ class FakeIdentityProvider:
         self._por_email = {e: v for e, v in self._por_email.items() if v[0] != sub}
 
     async def enviar_verificacion(self, id_token: str) -> None:
-        # El "token" en modo fake es directamente el sub (ver marcar_verificado).
+        # El "token" en modo fake es directamente el sub.
         if id_token not in {sub for sub, _ in self._por_email.values()}:
             raise NoAutorizado("token inválido o expirado")
 
-    async def verificar_correo(self, id_token: str) -> tuple[str, bool]:
-        if id_token not in {sub for sub, _ in self._por_email.values()}:
-            raise NoAutorizado("token inválido o expirado")
-        return id_token, id_token in self._verificados
+    def emitir_codigo_verificacion(self, sub: str) -> str:
+        """Solo para pruebas: el código de un solo uso que el cliente recibiría por correo."""
+        codigo = f"oob-{uuid.uuid4().hex}"
+        self._codigos[codigo] = sub
+        return codigo
 
-    def marcar_verificado(self, sub: str) -> None:
-        """Solo para pruebas: simula que Identity Platform ya validó el correo."""
+    async def confirmar_correo(self, oob_code: str) -> str:
+        sub = self._codigos.pop(oob_code, None)  # de un solo uso
+        if sub is None:
+            raise ReglaNegocio(MENSAJE_ENLACE_INVALIDO)
         self._verificados.add(sub)
+        return sub
 
 
 class FakeCoreIdentity:

@@ -244,19 +244,38 @@ async def test_reenviar_confirmacion_delega_en_identity(service, identity):
 async def test_confirmar_cuenta_ok(service, identity):
     cuenta, _ = await service.registrar(DATOS)
     sub = identity._por_email[DATOS.email][0]
-    identity.marcar_verificado(sub)
+    codigo = identity.emitir_codigo_verificacion(sub)
 
-    confirmada = await service.confirmar_cuenta(sub)
+    confirmada = await service.confirmar_cuenta(codigo)
+
     assert confirmada.correo_confirmado is True
     assert confirmada.cliente_id == cuenta.cliente_id
+    assert sub in identity._verificados
 
 
-async def test_confirmar_cuenta_sin_verificar_en_identity_platform(service, identity):
+async def test_confirmar_cuenta_con_un_codigo_ya_usado(service, identity):
+    await service.registrar(DATOS)
+    sub = identity._por_email[DATOS.email][0]
+    codigo = identity.emitir_codigo_verificacion(sub)
+    await service.confirmar_cuenta(codigo)
+
+    with pytest.raises(ReglaNegocio):
+        await service.confirmar_cuenta(codigo)
+
+
+async def test_confirmar_cuenta_con_un_codigo_desconocido(service):
+    with pytest.raises(ReglaNegocio):
+        await service.confirmar_cuenta("codigo-desconocido")
+
+
+async def test_confirmar_cuenta_es_idempotente_en_core(service, identity):
     await service.registrar(DATOS)
     sub = identity._por_email[DATOS.email][0]
 
-    with pytest.raises(ReglaNegocio):
-        await service.confirmar_cuenta(sub)
+    primera = await service.confirmar_cuenta(identity.emitir_codigo_verificacion(sub))
+    segunda = await service.confirmar_cuenta(identity.emitir_codigo_verificacion(sub))
+
+    assert primera.correo_confirmado is segunda.correo_confirmado is True
 
 
 async def test_iniciar_sesion_sin_cliente_en_core(identity, core):

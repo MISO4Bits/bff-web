@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response, 
 from app.api.schemas import (
     PATRON_IDIOMA,
     PATRON_VERSION,
+    ConfirmacionRequest,
     ConsentimientoVistaOut,
     CotizacionOut,
     CotizacionRequest,
@@ -147,9 +148,13 @@ async def reenviar_confirmacion(id_token: IdentityTokenDep, service: ServiceDep)
 
 
 @router.post("/registro/confirmacion", response_model=CuentaOut, tags=["Registro"])
-async def confirmar_cuenta(id_token: IdentityTokenDep, service: ServiceDep) -> CuentaOut:
+async def confirmar_cuenta(
+    payload: ConfirmacionRequest, service: ServiceDep, response: Response
+) -> CuentaOut:
+    # Nunca se registra el código del enlace (es una credencial de un solo uso).
     logger.info("POST /v1/registro/confirmacion: solicitud recibida")
-    cuenta = await service.confirmar_cuenta(id_token)
+    cuenta = await service.confirmar_cuenta(payload.oob_code)
+    response.headers["Cache-Control"] = "no-store"
     return CuentaOut.model_validate(cuenta)
 
 
