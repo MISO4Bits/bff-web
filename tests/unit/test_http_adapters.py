@@ -174,6 +174,7 @@ async def test_core_registrar_cliente_ok_y_conflicto():
                 "primerApellido": "Ríos",
                 "email": "ana@example.com",
                 "estado": "ACTIVO",
+                "telefono": "+573001234567",
             },
         )
     )
@@ -223,6 +224,7 @@ async def test_core_registrar_cliente_reenvia_la_idempotency_key():
                 "primerApellido": "Ríos",
                 "email": "ana@example.com",
                 "estado": "ACTIVO",
+                "telefono": "+573001234567",
             },
         )
     )
@@ -378,6 +380,7 @@ async def test_core_existe_cliente_y_confirmar_cliente():
                 "primerApellido": "Ríos",
                 "email": "ana@example.com",
                 "estado": "ACTIVO",
+                "telefono": "+573001234567",
                 "correoConfirmado": True,
             },
         )
@@ -447,6 +450,7 @@ async def test_core_buscar_por_identidad():
                 "primerApellido": "Ríos",
                 "email": "ana@example.com",
                 "estado": "ACTIVO",
+                "telefono": "+573001234567",
             },
         )
     )

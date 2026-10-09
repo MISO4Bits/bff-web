@@ -697,7 +697,7 @@ components:
     Cuenta:
       type: object
       additionalProperties: false
-      required: [clienteId, primerNombre, primerApellido, email, estado, correoConfirmado]
+      required: [clienteId, primerNombre, primerApellido, email, telefono, estado, correoConfirmado]
       examples:
         - clienteId: 3f2b8c1e-7d4a-4e5b-9a61-2c8d5f0b7e14
           primerNombre: Ana
@@ -715,7 +715,7 @@ components:
         primerApellido: { type: string }
         segundoApellido: { type: [string, 'null'] }
         email: { type: string, format: email }
-        telefono: { type: [string, 'null'] }
+        telefono: { type: string }
         estado: { $ref: '#/components/schemas/EstadoCliente' }
         correoConfirmado:
           type: boolean

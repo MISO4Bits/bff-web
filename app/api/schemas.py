@@ -74,7 +74,7 @@ class CuentaOut(_Model):
     primer_apellido: str
     segundo_apellido: str | None = None
     email: str
-    telefono: str | None = None
+    telefono: str
     estado: Literal["ACTIVO", "BLOQUEADO", "INACTIVO"]
     correo_confirmado: bool = False
 

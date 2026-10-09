@@ -47,10 +47,10 @@ class ClienteCore:
     primer_apellido: str
     email: str
     estado: str
+    telefono: str
     correo_confirmado: bool = False
     segundo_nombre: str | None = None
     segundo_apellido: str | None = None
-    telefono: str | None = None
 
 
 @dataclass(frozen=True)
@@ -60,10 +60,10 @@ class Cuenta:
     primer_apellido: str
     email: str
     estado: str
+    telefono: str
     correo_confirmado: bool = False
     segundo_nombre: str | None = None
     segundo_apellido: str | None = None
-    telefono: str | None = None
 
     @classmethod
     def desde_core(cls, c: ClienteCore) -> Cuenta:

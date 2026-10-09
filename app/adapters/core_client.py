@@ -174,7 +174,7 @@ def _a_cliente(data: dict) -> ClienteCore:
         correo_confirmado=data.get("correoConfirmado", False),
         segundo_nombre=data.get("segundoNombre"),
         segundo_apellido=data.get("segundoApellido"),
-        telefono=data.get("telefono"),
+        telefono=data["telefono"],
     )
 
 
