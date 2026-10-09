@@ -83,6 +83,13 @@ async def test_registro_duplicado_devuelve_409(client):
     assert repetido.status_code == 409
 
 
+async def test_registro_sin_telefono_devuelve_400(client):
+    sin_telefono = {k: v for k, v in REGISTRO_VALIDO.items() if k != "telefono"}
+    resp = await client.post("/v1/registro", json=sin_telefono)
+    assert resp.status_code == 400
+    assert any(e["campo"].endswith("telefono") for e in resp.json()["errores"])
+
+
 async def test_body_invalido_devuelve_400(client):
     resp = await client.post("/v1/registro", json={"email": "malo", "password": "x"})
     assert resp.status_code == 400

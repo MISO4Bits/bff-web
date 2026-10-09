@@ -37,6 +37,7 @@ class CoreClientAdapter:
             "primerApellido": datos.primer_apellido,
             "fechaNacimiento": datos.fecha_nacimiento.isoformat(),
             "email": datos.email,
+            "telefono": datos.telefono,
             # El BFF web es el único canal hoy; igual que en otorgar_consentimiento,
             # se fija "WEB" aquí en vez de pedírselo al cliente final.
             "canal": "WEB",
@@ -47,8 +48,6 @@ class CoreClientAdapter:
             cuerpo["segundoNombre"] = datos.segundo_nombre
         if datos.segundo_apellido:
             cuerpo["segundoApellido"] = datos.segundo_apellido
-        if datos.telefono:
-            cuerpo["telefono"] = datos.telefono
         if datos.politica_version_tratamiento_datos:
             cuerpo["politicaVersionTratamientoDatos"] = datos.politica_version_tratamiento_datos
         if datos.politica_version_datos_financieros:

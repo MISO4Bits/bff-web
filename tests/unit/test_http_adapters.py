@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -53,6 +54,7 @@ DATOS = RegistroInput(
     primer_nombre="Ana",
     primer_apellido="Ríos",
     fecha_nacimiento=date(1990, 1, 1),
+    telefono="+573001234567",
     politica_version="v1",
     autoriza_tratamiento_datos=True,
     autoriza_datos_financieros=True,
@@ -177,6 +179,8 @@ async def test_core_registrar_cliente_ok_y_conflicto():
     try:
         cliente = await adapter.registrar_cliente("sub-1", DATOS)
         assert cliente.id == "c1"
+        enviado = json.loads(ruta.calls.last.request.content)
+        assert enviado["telefono"] == "+573001234567"
 
         ruta.mock(return_value=httpx.Response(409, json={"detail": "existe"}))
         with pytest.raises(Conflicto):

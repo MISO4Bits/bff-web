@@ -38,7 +38,7 @@ class RegistroRequest(_Model):
     primer_apellido: str = Field(min_length=1, max_length=60)
     segundo_apellido: str | None = Field(default=None, max_length=60)
     fecha_nacimiento: date
-    telefono: str | None = Field(default=None, pattern=_TELEFONO)
+    telefono: str = Field(pattern=_TELEFONO)
     politica_version: str = Field(max_length=20)
     acepta_terminos: Literal[True]
     autoriza_tratamiento_datos: bool
