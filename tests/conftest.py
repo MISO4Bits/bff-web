@@ -20,6 +20,7 @@ REGISTRO_VALIDO = {
     "primerNombre": "Ana",
     "primerApellido": "Ríos",
     "fechaNacimiento": "1991-05-20",
+    "telefono": "+573001234567",
     "politicaVersion": "2026-01",
     "aceptaTerminos": True,
     "autorizaTratamientoDatos": True,

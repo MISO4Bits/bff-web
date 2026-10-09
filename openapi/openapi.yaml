@@ -58,7 +58,13 @@ paths:
         3. Devuelve una sesión iniciada.
 
         Si el correo o el documento ya existen responde `409` y no deja nada creado
-        (revierte la credencial si alcanzó a crearse). Idempotente con `Idempotency-Key`.
+        (revierte la credencial si alcanzó a crearse). El campo repetido viaja en
+        `errores[].campo` (`correo` o `documento`), sin revelar datos de otra persona.
+
+        **Reintentos (`Idempotency-Key`).** Si el cliente reintenta con la misma clave
+        porque perdió la respuesta, y envía el mismo correo y contraseña, recibe `201`
+        con la cuenta ya creada y una sesión nueva, sin duplicar nada. Con otra
+        contraseña, o sin clave, un correo ya registrado es un `409` normal.
       security: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -135,22 +141,37 @@ paths:
     post:
       operationId: confirmarCuenta
       tags: [Registro]
-      summary: Confirma la cuenta tras validar el enlace de activación
+      summary: Confirma el correo con el código del enlace de verificación
       description: |
-        El frontend valida el enlace contra Identity Platform (`applyActionCode`)
-        y llama aquí con un ID token fresco (`email_verified: true`). El BFF lo
-        valida contra Identity Platform y, si corresponde, confirma la cuenta en
-        CoreTransaccional (BITS-93 AC-3). Idempotente: confirmar dos veces no falla.
-      security:
-        - identityPlatformToken: []
+        **Público** (no requiere token ni sesión): el usuario puede abrir el enlace
+        en otro dispositivo. El correo de verificación lleva un enlace a la web,
+        `https://solventa4bits.com/verificar-correo?oobCode=XXXX`; la página lee el
+        `oobCode` y lo envía aquí con un `POST` (nunca un `GET` directo, porque los
+        escáneres de correo abren los enlaces y consumirían el código).
+
+        El BFF canjea el código con Identity Platform (queda el correo verificado
+        allí) y confirma la cuenta en CoreTransaccional con su fecha (BITS-93 AC-5).
+
+        El código es **de un solo uso** y vence según Identity Platform: un código
+        ya usado, vencido o inválido responde `422` con un mismo mensaje. El código
+        no se registra en logs.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmacionRequest' }
       responses:
         '200':
-          description: Cuenta confirmada (o ya lo estaba).
+          description: Correo confirmado (`correoConfirmado` en `true`).
+          headers:
+            Cache-Control: { schema: { type: string, example: no-store } }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Cuenta' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
         '422': { $ref: '#/components/responses/EntidadNoProcesable' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
 
   /v1/sesiones:
     post:
@@ -387,9 +408,9 @@ components:
       description: |
         ID token de Identity Platform tal cual lo emite (no la sesión propia del
         BFF). El BFF lo valida contra Identity Platform, no localmente — se usa
-        solo en el paso de activación (`/v1/registro/reenvio-confirmacion`,
-        `/v1/registro/confirmacion`), donde el cliente puede no tener aún una
-        sesión del BFF completamente confirmada.
+        solo en el reenvío del correo de activación
+        (`/v1/registro/reenvio-confirmacion`), donde el cliente puede no tener aún
+        una sesión del BFF completamente confirmada.
 
   parameters:
     Mercado:
@@ -406,7 +427,9 @@ components:
       name: Idempotency-Key
       in: header
       required: false
-      description: Clave de idempotencia para reintentar el registro sin duplicar.
+      description: |
+        Clave de idempotencia para reintentar el registro sin duplicar. Genere una
+        clave por intento de registro y reutilícela solo al reintentar ese mismo intento.
       schema: { type: string, maxLength: 64 }
 
   responses:
@@ -471,10 +494,10 @@ components:
                 detail: credenciales inválidas
                 instance: https://dev.solventa4bits.com/web/v1/sesiones
     Conflicto:
-      description: El correo o el documento ya están registrados.
+      description: El correo o el documento ya están registrados. `errores[0].campo` dice cuál.
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/Problema' }
+          schema: { $ref: '#/components/schemas/ProblemaConflicto' }
           examples:
             correoRegistrado:
               summary: El correo ya tiene una cuenta
@@ -484,6 +507,9 @@ components:
                 status: 409
                 detail: El correo ya está registrado
                 instance: https://dev.solventa4bits.com/web/v1/registro
+                errores:
+                  - campo: correo
+                    mensaje: El correo ya está registrado
             documentoRegistrado:
               summary: El documento ya pertenece a un cliente
               value:
@@ -492,19 +518,22 @@ components:
                 status: 409
                 detail: El documento ya está registrado
                 instance: https://dev.solventa4bits.com/web/v1/registro
+                errores:
+                  - campo: documento
+                    mensaje: El documento ya está registrado
     EntidadNoProcesable:
       description: La solicitud es válida pero incumple una regla de negocio.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }
           examples:
-            correoSinVerificar:
-              summary: Confirmar la cuenta sin haber verificado el correo
+            enlaceInvalido:
+              summary: El código del enlace de verificación ya se usó, venció o no es válido
               value:
                 type: about:blank
                 title: Regla de negocio no satisfecha
                 status: 422
-                detail: el correo todavía no está verificado en Identity Platform
+                detail: El enlace de confirmación no es válido, ya se usó o venció
                 instance: https://dev.solventa4bits.com/web/v1/registro/confirmacion
     NoEncontrado:
       description: El recurso no existe.
@@ -548,7 +577,7 @@ components:
     RegistroRequest:
       type: object
       additionalProperties: false
-      required: [email, password, tipoDocumento, numeroDocumento, primerNombre, primerApellido, fechaNacimiento, politicaVersion, aceptaTerminos, autorizaTratamientoDatos, autorizaDatosFinancieros]
+      required: [email, password, tipoDocumento, numeroDocumento, primerNombre, primerApellido, fechaNacimiento, telefono, politicaVersion, aceptaTerminos, autorizaTratamientoDatos, autorizaDatosFinancieros]
       examples:
         - email: ana.rios@example.com
           password: Clave-Segura-2026
@@ -576,7 +605,7 @@ components:
         primerApellido: { type: string, minLength: 1, maxLength: 60 }
         segundoApellido: { type: [string, 'null'], maxLength: 60 }
         fechaNacimiento: { type: string, format: date }
-        telefono: { type: [string, 'null'], pattern: '^\+?[0-9]{7,15}$' }
+        telefono: { type: string, pattern: '^\+?[0-9]{7,15}$', description: Celular de contacto (obligatorio). }
         politicaVersion: { type: string, maxLength: 20, description: Versión de términos y política de datos aceptada. }
         aceptaTerminos:
           type: boolean
@@ -601,6 +630,19 @@ components:
           type: [string, 'null']
           maxLength: 20
           description: Versión de la autorización de datos financieros aceptada. Solo aplica si se autoriza.
+
+    ConfirmacionRequest:
+      type: object
+      additionalProperties: false
+      required: [oobCode]
+      properties:
+        oobCode:
+          type: string
+          minLength: 10
+          maxLength: 512
+          pattern: '^[A-Za-z0-9_-]+$'
+          description: Código de un solo uso del enlace de verificación (parámetro `oobCode` de la URL).
+          examples: [AbCdEf0123456789_-xYz]
 
     RegistroResponse:
       type: object
@@ -655,7 +697,7 @@ components:
     Cuenta:
       type: object
       additionalProperties: false
-      required: [clienteId, primerNombre, primerApellido, email, estado, correoConfirmado]
+      required: [clienteId, primerNombre, primerApellido, email, telefono, estado, correoConfirmado]
       examples:
         - clienteId: 3f2b8c1e-7d4a-4e5b-9a61-2c8d5f0b7e14
           primerNombre: Ana
@@ -673,7 +715,7 @@ components:
         primerApellido: { type: string }
         segundoApellido: { type: [string, 'null'] }
         email: { type: string, format: email }
-        telefono: { type: [string, 'null'] }
+        telefono: { type: string }
         estado: { $ref: '#/components/schemas/EstadoCliente' }
         correoConfirmado:
           type: boolean
@@ -907,6 +949,34 @@ components:
           status: 409
           detail: El correo ya está registrado
           instance: https://dev.solventa4bits.com/web/v1/registro
+
+    ProblemaConflicto:
+      description: |
+        `Problema` de un conflicto de registro (`409`). `errores` trae un único elemento
+        con el campo repetido.
+      allOf:
+        - $ref: '#/components/schemas/Problema'
+        - type: object
+          required: [errores]
+          properties:
+            errores:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [campo, mensaje]
+                properties:
+                  campo: { type: string, enum: [correo, documento] }
+                  mensaje: { type: string }
+      examples:
+        - type: about:blank
+          title: Conflicto
+          status: 409
+          detail: El correo ya está registrado
+          instance: https://dev.solventa4bits.com/web/v1/registro
+          errores:
+            - campo: correo
+              mensaje: El correo ya está registrado
 
     ProblemaValidacion:
       description: |

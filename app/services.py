@@ -6,12 +6,15 @@ import logging
 
 from app.domain import (
     BffError,
+    ClienteCore,
+    Conflicto,
     Cotizacion,
     CotizacionInput,
     Cuenta,
     DocumentoLegal,
+    NoAutorizado,
+    RecursoNoEncontrado,
     RegistroInput,
-    ReglaNegocio,
     Sesion,
 )
 from app.logging_utils import sanear_para_log
@@ -39,32 +42,71 @@ class OnboardingService:
         self._cotizacion = cotizacion
         self._sessions = sessions
 
-    async def registrar(self, datos: RegistroInput) -> tuple[Cuenta, Sesion]:
+    async def registrar(
+        self, datos: RegistroInput, idempotency_key: str | None = None
+    ) -> tuple[Cuenta, Sesion]:
         logger.info("registrar: creando credencial en Identity Platform")
-        sub = await self._identity.registrar(datos.email, datos.password)
-        logger.info(
-            "registrar: credencial creada, registrando cliente en CoreTransaccional sub=%s", sub
-        )
+        compensar_si_falla = True
         try:
-            cliente = await self._core.registrar_cliente(sub, datos)
+            sub = await self._identity.registrar(datos.email, datos.password)
+        except Conflicto as conflicto:
+            # Con Idempotency-Key, un correo ya registrado puede ser el reintento de
+            # esta misma solicitud (la respuesta se perdió): se reconoce si el cliente
+            # demuestra la contraseña. Sin clave, es un duplicado normal.
+            if idempotency_key is None:
+                raise
+            sub = await self._credencial_del_reintento(datos, conflicto)
+            existente = await self._cliente_por_identidad(sub)
+            if existente is not None:
+                logger.info("registrar: reintento idempotente cliente_id=%s", existente.id)
+                sesion = self._sessions.emitir(
+                    sub=sub, cliente_id=existente.id, email=existente.email
+                )
+                return Cuenta.desde_core(existente), sesion
+            # Credencial huérfana (el alta en Core nunca se completó): se termina el
+            # alta con ella y, si vuelve a fallar, no se borra lo que ya existía.
+            logger.info("registrar: credencial sin cliente, completando alta sub=%s", sub)
+            compensar_si_falla = False
+        else:
+            logger.info("registrar: credencial creada sub=%s", sub)
+        logger.info("registrar: registrando cliente en CoreTransaccional sub=%s", sub)
+        try:
+            cliente = await self._core.registrar_cliente(sub, datos, idempotency_key)
         except BffError:
             logger.warning(
-                "registrar: CoreTransaccional rechazó el registro, revirtiendo credencial sub=%s",
+                "registrar: CoreTransaccional rechazó el registro sub=%s compensar=%s",
                 sub,
+                compensar_si_falla,
             )
-            await self._compensar(sub)
+            if compensar_si_falla:
+                await self._compensar(sub)
             raise
         except Exception:  # noqa: BLE001 - garantiza que no queden credenciales huérfanas
             logger.warning(
-                "registrar: fallo inesperado en CoreTransaccional, revirtiendo credencial sub=%s",
+                "registrar: fallo inesperado en CoreTransaccional sub=%s compensar=%s",
                 sub,
+                compensar_si_falla,
             )
-            await self._compensar(sub)
+            if compensar_si_falla:
+                await self._compensar(sub)
             raise
 
         sesion = self._sessions.emitir(sub=sub, cliente_id=cliente.id, email=cliente.email)
         logger.info("registrar: registro completado cliente_id=%s", cliente.id)
         return Cuenta.desde_core(cliente), sesion
+
+    async def _credencial_del_reintento(self, datos: RegistroInput, conflicto: Conflicto) -> str:
+        try:
+            return await self._identity.autenticar(datos.email, datos.password)
+        except NoAutorizado:
+            # No es el mismo solicitante: se responde el conflicto original.
+            raise conflicto from None
+
+    async def _cliente_por_identidad(self, sub: str) -> ClienteCore | None:
+        try:
+            return await self._core.buscar_cliente_por_identidad(sub)
+        except RecursoNoEncontrado:
+            return None
 
     async def _compensar(self, sub: str) -> None:
         try:
@@ -101,11 +143,9 @@ class OnboardingService:
         logger.info("reenviar_confirmacion: solicitando reenvío a Identity Platform")
         await self._identity.enviar_verificacion(id_token)
 
-    async def confirmar_cuenta(self, id_token: str) -> Cuenta:
-        logger.info("confirmar_cuenta: verificando correo contra Identity Platform")
-        sub, verificado = await self._identity.verificar_correo(id_token)
-        if not verificado:
-            raise ReglaNegocio("el correo todavía no está verificado en Identity Platform")
+    async def confirmar_cuenta(self, oob_code: str) -> Cuenta:
+        logger.info("confirmar_cuenta: canjeando el código de verificación")
+        sub = await self._identity.confirmar_correo(oob_code)
         cliente = await self._core.buscar_cliente_por_identidad(sub)
         confirmado = await self._core.confirmar_cliente(cliente.id)
         logger.info("confirmar_cuenta: cuenta confirmada cliente_id=%s", confirmado.id)

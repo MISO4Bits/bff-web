@@ -18,11 +18,18 @@ VALIDO = {
     "primerNombre": "Ana",
     "primerApellido": "Ríos",
     "fechaNacimiento": "1990-01-01",
+    "telefono": "+573001234567",
     "politicaVersion": "v1",
     "aceptaTerminos": True,
     "autorizaTratamientoDatos": True,
     "autorizaDatosFinancieros": True,
 }
+
+
+def test_registro_request_exige_telefono():
+    sin_telefono = {k: v for k, v in VALIDO.items() if k != "telefono"}
+    with pytest.raises(ValidationError):
+        RegistroRequest.model_validate(sin_telefono)
 
 
 def test_registro_request_valido():

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response, 
 from app.api.schemas import (
     PATRON_IDIOMA,
     PATRON_VERSION,
+    ConfirmacionRequest,
     ConsentimientoVistaOut,
     CotizacionOut,
     CotizacionRequest,
@@ -89,7 +90,11 @@ IdentityTokenDep = Annotated[str, Depends(identity_token_actual)]
     status_code=status.HTTP_201_CREATED,
     tags=["Registro"],
 )
-async def registrarse(payload: RegistroRequest, service: ServiceDep) -> RegistroResponse:
+async def registrarse(
+    payload: RegistroRequest,
+    service: ServiceDep,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=64)] = None,
+) -> RegistroResponse:
     logger.info("POST /v1/registro: solicitud recibida")
     entrada = RegistroInput(
         email=payload.email,
@@ -108,7 +113,7 @@ async def registrarse(payload: RegistroRequest, service: ServiceDep) -> Registro
         politica_version_tratamiento_datos=payload.politica_version_tratamiento_datos,
         politica_version_datos_financieros=payload.politica_version_datos_financieros,
     )
-    cuenta, sesion = await service.registrar(entrada)
+    cuenta, sesion = await service.registrar(entrada, idempotency_key)
     return RegistroResponse(
         cuenta=CuentaOut.model_validate(cuenta),
         sesion=SesionOut.model_validate(sesion),
@@ -143,9 +148,13 @@ async def reenviar_confirmacion(id_token: IdentityTokenDep, service: ServiceDep)
 
 
 @router.post("/registro/confirmacion", response_model=CuentaOut, tags=["Registro"])
-async def confirmar_cuenta(id_token: IdentityTokenDep, service: ServiceDep) -> CuentaOut:
+async def confirmar_cuenta(
+    payload: ConfirmacionRequest, service: ServiceDep, response: Response
+) -> CuentaOut:
+    # Nunca se registra el código del enlace (es una credencial de un solo uso).
     logger.info("POST /v1/registro/confirmacion: solicitud recibida")
-    cuenta = await service.confirmar_cuenta(id_token)
+    cuenta = await service.confirmar_cuenta(payload.oob_code)
+    response.headers["Cache-Control"] = "no-store"
     return CuentaOut.model_validate(cuenta)
 
 

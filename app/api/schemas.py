@@ -38,13 +38,17 @@ class RegistroRequest(_Model):
     primer_apellido: str = Field(min_length=1, max_length=60)
     segundo_apellido: str | None = Field(default=None, max_length=60)
     fecha_nacimiento: date
-    telefono: str | None = Field(default=None, pattern=_TELEFONO)
+    telefono: str = Field(pattern=_TELEFONO)
     politica_version: str = Field(max_length=20)
     acepta_terminos: Literal[True]
     autoriza_tratamiento_datos: bool
     politica_version_tratamiento_datos: str | None = Field(default=None, max_length=20)
     autoriza_datos_financieros: bool
     politica_version_datos_financieros: str | None = Field(default=None, max_length=20)
+
+
+class ConfirmacionRequest(_Model):
+    oob_code: str = Field(min_length=10, max_length=512, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class CredencialesRequest(_Model):
@@ -70,7 +74,7 @@ class CuentaOut(_Model):
     primer_apellido: str
     segundo_apellido: str | None = None
     email: str
-    telefono: str | None = None
+    telefono: str
     estado: Literal["ACTIVO", "BLOQUEADO", "INACTIVO"]
     correo_confirmado: bool = False
 

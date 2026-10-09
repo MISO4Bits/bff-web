@@ -28,7 +28,9 @@ class CoreClientAdapter:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def registrar_cliente(self, identity_ref: str, datos: RegistroInput) -> ClienteCore:
+    async def registrar_cliente(
+        self, identity_ref: str, datos: RegistroInput, idempotency_key: str | None = None
+    ) -> ClienteCore:
         cuerpo = {
             "identityRef": identity_ref,
             "tipoDocumento": datos.tipo_documento,
@@ -37,6 +39,7 @@ class CoreClientAdapter:
             "primerApellido": datos.primer_apellido,
             "fechaNacimiento": datos.fecha_nacimiento.isoformat(),
             "email": datos.email,
+            "telefono": datos.telefono,
             # El BFF web es el único canal hoy; igual que en otorgar_consentimiento,
             # se fija "WEB" aquí en vez de pedírselo al cliente final.
             "canal": "WEB",
@@ -47,17 +50,17 @@ class CoreClientAdapter:
             cuerpo["segundoNombre"] = datos.segundo_nombre
         if datos.segundo_apellido:
             cuerpo["segundoApellido"] = datos.segundo_apellido
-        if datos.telefono:
-            cuerpo["telefono"] = datos.telefono
         if datos.politica_version_tratamiento_datos:
             cuerpo["politicaVersionTratamientoDatos"] = datos.politica_version_tratamiento_datos
         if datos.politica_version_datos_financieros:
             cuerpo["politicaVersionDatosFinancieros"] = datos.politica_version_datos_financieros
 
-        resp = await self._http.request("POST", "/clientes", json=cuerpo)
+        headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
+        resp = await self._http.request("POST", "/clientes", json=cuerpo, headers=headers)
         if resp.status_code == 409:
-            logger.info("documento ya registrado")
-            raise Conflicto("El documento ya está registrado")
+            campo = _campo_en_conflicto(resp)
+            logger.info("registro en conflicto campo=%s", campo)
+            raise Conflicto.por_campo(campo)
         if resp.status_code in (400, 422):
             logger.info("solicitud inválida (%s)", _detalle(resp))
             raise SolicitudInvalida(_detalle(resp))
@@ -147,6 +150,15 @@ def _detalle(resp: httpx.Response) -> str:
         return ""
 
 
+def _campo_en_conflicto(resp: httpx.Response) -> str:
+    """Campo que CoreTransaccional reporta como repetido; ``documento`` si no lo indica."""
+    try:
+        campo = resp.json()["errores"][0]["campo"]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return "documento"
+    return campo if campo in ("correo", "documento") else "documento"
+
+
 def _asegurar_ok(resp: httpx.Response, *, esperado: int = 200) -> None:
     if resp.status_code != esperado and resp.status_code >= 400:
         raise BffError(f"svc-core respondió {resp.status_code}")
@@ -162,7 +174,7 @@ def _a_cliente(data: dict) -> ClienteCore:
         correo_confirmado=data.get("correoConfirmado", False),
         segundo_nombre=data.get("segundoNombre"),
         segundo_apellido=data.get("segundoApellido"),
-        telefono=data.get("telefono"),
+        telefono=data["telefono"],
     )
 
 

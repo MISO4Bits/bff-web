@@ -6,7 +6,14 @@ import logging
 
 import httpx
 
-from app.domain import BffError, Conflicto, NoAutorizado, SolicitudInvalida
+from app.domain import (
+    MENSAJE_ENLACE_INVALIDO,
+    BffError,
+    Conflicto,
+    NoAutorizado,
+    ReglaNegocio,
+    SolicitudInvalida,
+)
 from app.resilience import ResilientHttpClient
 
 logger = logging.getLogger("bff_web.adapters.identity_platform")
@@ -31,7 +38,7 @@ class IdentityPlatformAdapter:
             mensaje = _mensaje_error(resp)
             if "EMAIL_EXISTS" in mensaje:
                 logger.info("Identity Platform: correo ya registrado")
-                raise Conflicto("El correo ya está registrado")
+                raise Conflicto.por_campo("correo")
             logger.info("Identity Platform: registro rechazado (%s)", mensaje)
             raise SolicitudInvalida(mensaje or "registro rechazado por el proveedor")
         _asegurar_ok(resp)
@@ -79,24 +86,26 @@ class IdentityPlatformAdapter:
         _asegurar_ok(resp)
         logger.info("Identity Platform: verificación reenviada")
 
-    async def verificar_correo(self, id_token: str) -> tuple[str, bool]:
+    async def confirmar_correo(self, oob_code: str) -> str:
         resp = await self._http.request(
             "POST",
-            "/v1/accounts:lookup",
+            "/v1/accounts:update",
             params=self._params,
-            json={"idToken": id_token},
+            json={"oobCode": oob_code},
         )
         if resp.status_code == 400:
+            # INVALID_OOB_CODE / EXPIRED_OOB_CODE: el código nunca se registra.
             logger.info(
-                "Identity Platform: token inválido en verificar_correo (%s)", _mensaje_error(resp)
+                "Identity Platform: código de verificación rechazado (%s)", _mensaje_error(resp)
             )
-            raise NoAutorizado("token inválido o expirado")
+            raise ReglaNegocio(MENSAJE_ENLACE_INVALIDO)
         _asegurar_ok(resp)
-        usuarios = resp.json().get("users", [])
-        if not usuarios:
-            raise NoAutorizado("token inválido o expirado")
-        usuario = usuarios[0]
-        return usuario["localId"], bool(usuario.get("emailVerified", False))
+        datos = resp.json()
+        sub = datos.get("localId")
+        if not sub or datos.get("emailVerified") is False:
+            raise BffError("Identity Platform no confirmó el correo")
+        logger.info("Identity Platform: correo verificado sub=%s", sub)
+        return sub
 
 
 def _mensaje_error(resp: httpx.Response) -> str:
