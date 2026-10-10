@@ -18,7 +18,7 @@ def configure_cors(app: FastAPI, settings: Settings) -> None:
         allow_origins=origenes_permitidos(settings),
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["Content-Type", "Authorization"],
+        allow_headers=["Content-Type", "Authorization", "Idempotency-Key"],
         # El navegador cachea el preflight: una sola petición OPTIONS por hora y ruta.
         max_age=3600,
     )
