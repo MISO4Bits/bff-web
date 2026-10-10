@@ -12,7 +12,7 @@ from app.api.errors import install_error_handlers
 from app.api.routes import router
 from app.config import Settings, get_settings
 from app.logging_utils import SinRuidoDeHealthCheck
-from app.services import DocumentosLegalesService, OnboardingService
+from app.services import CreditosHipotecariosService, DocumentosLegalesService, OnboardingService
 from app.telemetry import agregar_encabezado_trace_id, setup_telemetry, shutdown_telemetry
 
 SPEC_PATH = Path(__file__).resolve().parents[2] / "openapi" / "openapi.yaml"
@@ -26,6 +26,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     deps = build_dependencias(settings)
     service = OnboardingService(deps.identity, deps.core, deps.cotizacion, deps.sessions)
     documentos_legales = DocumentosLegalesService(deps.documentos_legales)
+    creditos = CreditosHipotecariosService(
+        deps.creditos, deps.entidades, cache_segundos=settings.entidades_cache_segundos
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -40,6 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.deps = deps
     app.state.service = service
     app.state.documentos_legales = documentos_legales
+    app.state.creditos = creditos
     app.state.sessions = deps.sessions
 
     install_error_handlers(app)

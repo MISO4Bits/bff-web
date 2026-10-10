@@ -347,6 +347,45 @@ paths:
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
 
+  /v1/creditos-hipotecarios:
+    get:
+      operationId: obtenerCreditosHipotecarios
+      tags: [Cotización]
+      summary: Hipotecas del cliente y bancos del mercado, para empezar una cotización
+      description: |
+        Paso previo a cotizar. Devuelve las hipotecas abiertas del cliente que
+        Perfilamiento ya trajo de Open Finance cuando el cliente dio su consentimiento
+        (no se consulta a la fuente en esta llamada), junto con la lista de bancos del
+        mercado. El cliente elige un banco y rellena el formulario con los datos de esa
+        hipoteca sin volver a llamar al backend; si no hay datos, escribe los suyos.
+
+        `estado` dice qué mostrar:
+        - `DISPONIBLE`: hay hipotecas en `creditos`; el cliente elige una.
+        - `SIN_HIPOTECAS`: la fuente respondió y no hay ninguna abierta; captura manual.
+        - `SIN_CONSENTIMIENTO`: el cliente no autorizó Open Finance; captura manual.
+        - `NO_DISPONIBLE`: no hay datos vigentes y la fuente no respondió; el cliente
+          puede reintentar o escribir los datos.
+
+        Siempre incluye `entidades` (los bancos del mercado) para la captura manual.
+        Los datos son del cliente autenticado y la respuesta no se guarda en caché.
+      parameters:
+        - name: mercado
+          in: query
+          required: false
+          schema: { type: string, enum: [CO], default: CO }
+      responses:
+        '200':
+          description: Hipotecas del cliente y bancos del mercado.
+          headers:
+            Cache-Control:
+              schema: { type: string, examples: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreditosHipotecarios' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
+
   /v1/cotizaciones:
     post:
       operationId: crearCotizacion
@@ -880,6 +919,67 @@ components:
       properties:
         desde: { type: string, format: date-time }
         hasta: { type: string, format: date-time }
+
+    EntidadFinanciera:
+      type: object
+      additionalProperties: false
+      required: [id, nombre]
+      properties:
+        id: { type: string, examples: [bancolombia] }
+        nombre: { type: string, examples: [Bancolombia] }
+
+    CreditoHipotecario:
+      type: object
+      additionalProperties: false
+      required: [entidadNombre, valorCredito, saldoInsoluto, plazoRestanteMeses, cuotaMensual]
+      properties:
+        entidadId:
+          type: string
+          description: Entidad del mercado a la que corresponde. Ausente si el banco no está en la lista.
+        entidadNombre:
+          type: string
+          description: Nombre de la entidad para mostrar.
+        valorCredito: { type: number, description: Monto total del crédito, en COP. }
+        saldoInsoluto: { type: number, description: Saldo a hoy, en COP. }
+        plazoRestanteMeses: { type: integer, minimum: 1, description: Meses que faltan. }
+        cuotaMensual: { type: number, description: Cuota mensual, en COP. }
+
+    CreditosHipotecarios:
+      type: object
+      additionalProperties: false
+      required: [estado, creditos, entidades, origen]
+      examples:
+        - estado: DISPONIBLE
+          origen: OPEN_FINANCE
+          fechaConsulta: '2026-10-09T12:00:00Z'
+          creditos:
+            - entidadId: bancolombia
+              entidadNombre: Bancolombia
+              valorCredito: 380000000
+              saldoInsoluto: 320000000
+              plazoRestanteMeses: 180
+              cuotaMensual: 3100000
+          entidades:
+            - { id: bancolombia, nombre: Bancolombia }
+            - { id: davivienda, nombre: Davivienda }
+      properties:
+        estado:
+          type: string
+          enum: [DISPONIBLE, SIN_HIPOTECAS, SIN_CONSENTIMIENTO, NO_DISPONIBLE]
+        creditos:
+          type: array
+          items: { $ref: '#/components/schemas/CreditoHipotecario' }
+        entidades:
+          type: array
+          items: { $ref: '#/components/schemas/EntidadFinanciera' }
+          description: Bancos del mercado, en el orden en que se presentan.
+        origen:
+          type: string
+          enum: [OPEN_FINANCE]
+        fechaConsulta:
+          type: string
+          format: date-time
+          description: Cuándo se trajeron los datos de la fuente. Ausente si no hay datos.
 
     Cotizacion:
       type: object

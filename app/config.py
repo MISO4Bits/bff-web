@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     core_base_url: str = "http://localhost:8080"
     cotizacion_base_url: str = "http://localhost:8090"
     productos_base_url: str = "http://localhost:8100"
+    perfilamiento_base_url: str = "http://localhost:8110"
+
+    # La lista de entidades del mercado casi no cambia: se guarda en el BFF para no
+    # llamar a Productos en cada pantalla (y poder responder si Productos cae).
+    entidades_cache_segundos: int = 3600
 
     # Patrones de resiliencia hacia dependencias (§6.1: timeout duro 700 ms)
     http_timeout_seconds: float = 0.7
