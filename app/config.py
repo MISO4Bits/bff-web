@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     service_name: str = "bff-web"
     environment: str = "local"
 
+    # CORS: orígenes (separados por coma) que pueden llamar a la API desde un
+    # navegador — el portal web. Por defecto solo el servidor local de Angular;
+    # en el cluster se fija en el manifiesto (BFF_CORS_ORIGINS).
+    cors_origins: str = "http://localhost:4200"
+
     # Adaptadores de salida: "fake" (todo en memoria, standalone) | "http" (servicios reales)
     adapters: str = "fake"
 

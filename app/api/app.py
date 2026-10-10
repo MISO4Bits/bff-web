@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from app.adapters.factory import build_dependencias
+from app.api.cors import configure_cors
 from app.api.errors import install_error_handlers
 from app.api.routes import router
 from app.config import Settings, get_settings
@@ -58,5 +59,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         @app.get("/openapi.yaml", include_in_schema=False)
         async def openapi_yaml() -> FileResponse:
             return FileResponse(SPEC_PATH, media_type="application/yaml")
+
+    # Último en agregarse = más externo: responde el preflight antes que el resto.
+    configure_cors(app, settings)
 
     return app
