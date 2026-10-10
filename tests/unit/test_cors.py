@@ -43,15 +43,10 @@ def test_por_defecto_solo_el_servidor_local_de_desarrollo():
     assert _preflight(client, "https://solventa4bits.com").status_code == 400
 
 
-def test_punto_de_entrada_tiene_cors_configurado():
-    from app.main import app
+def test_create_app_configura_cors():
+    from app.api.app import create_app
 
-    client = TestClient(app)
-    resp = client.options(
-        "/healthz",
-        headers={
-            "Origin": "http://localhost:4200",
-            "Access-Control-Request-Method": "GET",
-        },
-    )
-    assert resp.headers["access-control-allow-origin"] == "http://localhost:4200"
+    client = TestClient(create_app(Settings(cors_origins="https://solventa4bits.com")))
+    resp = _preflight(client, "https://solventa4bits.com")
+    assert resp.headers["access-control-allow-origin"] == "https://solventa4bits.com"
+    assert "access-control-allow-origin" not in _preflight(client, "http://localhost:4200").headers
