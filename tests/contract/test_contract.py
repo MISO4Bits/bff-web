@@ -156,3 +156,12 @@ async def test_expone_el_contrato(client):
     resp = await client.get("/openapi.yaml")
     assert resp.status_code == 200
     assert "openapi" in resp.text
+
+
+async def test_creditos_hipotecarios_cumplen_el_contrato(cliente_autenticado, openapi_spec):
+    client, headers = cliente_autenticado
+
+    resp = await client.get("/v1/creditos-hipotecarios", headers=headers)
+
+    assert resp.status_code == 200
+    _validar(openapi_spec, "CreditosHipotecarios", resp.json())

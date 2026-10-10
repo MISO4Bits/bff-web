@@ -13,6 +13,7 @@ from app.api.schemas import (
     CotizacionOut,
     CotizacionRequest,
     CredencialesRequest,
+    CreditosHipotecariosOut,
     CuentaOut,
     DisponibilidadOut,
     DocumentoLegalOut,
@@ -32,7 +33,7 @@ from app.domain import (
     RegistroInput,
 )
 from app.logging_utils import sanear_para_log
-from app.services import DocumentosLegalesService, OnboardingService
+from app.services import CreditosHipotecariosService, DocumentosLegalesService, OnboardingService
 
 logger = logging.getLogger("bff_web.api")
 router = APIRouter(prefix="/v1")
@@ -50,6 +51,13 @@ def get_documentos_legales(request: Request) -> DocumentosLegalesService:
 
 
 DocumentosLegalesDep = Annotated[DocumentosLegalesService, Depends(get_documentos_legales)]
+
+
+def get_creditos(request: Request) -> CreditosHipotecariosService:
+    return request.app.state.creditos
+
+
+CreditosDep = Annotated[CreditosHipotecariosService, Depends(get_creditos)]
 MercadoQuery = Annotated[Literal["CO"], Query()]
 IdiomaQuery = Annotated[str, Query(pattern=PATRON_IDIOMA)]
 
@@ -326,3 +334,23 @@ async def obtener_version_documento_legal(
     documento = await service.obtener_version(tipo, version, mercado, idioma)
     response.headers["Cache-Control"] = CACHE_VERSION_INMUTABLE
     return DocumentoLegalOut.model_validate(documento)
+
+
+@router.get(
+    "/creditos-hipotecarios",
+    response_model=CreditosHipotecariosOut,
+    response_model_exclude_none=True,
+    tags=["Cotización"],
+)
+async def obtener_creditos_hipotecarios(
+    claims: ClaimsDep,
+    service: CreditosDep,
+    response: Response,
+    mercado: Annotated[Literal["CO"], Query()] = "CO",
+) -> CreditosHipotecariosOut:
+    logger.info(
+        "GET /v1/creditos-hipotecarios: solicitud recibida cliente_id=%s", claims.cliente_id
+    )
+    creditos = await service.obtener(claims.cliente_id, mercado)
+    response.headers["Cache-Control"] = "no-store"  # datos financieros del cliente
+    return CreditosHipotecariosOut.model_validate(creditos)

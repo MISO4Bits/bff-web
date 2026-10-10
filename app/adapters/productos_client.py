@@ -6,7 +6,13 @@ import logging
 
 import httpx
 
-from app.domain import BffError, DocumentoLegal, RecursoNoEncontrado, SolicitudInvalida
+from app.domain import (
+    BffError,
+    DocumentoLegal,
+    EntidadFinanciera,
+    RecursoNoEncontrado,
+    SolicitudInvalida,
+)
 from app.logging_utils import sanear_para_log
 from app.resilience import ResilientHttpClient
 
@@ -48,6 +54,20 @@ class ProductosClientAdapter:
             raise SolicitudInvalida(_detalle(resp))
         _asegurar_ok(resp)
         return _a_documento(resp.json())
+
+    async def listar_entidades(self, mercado: str) -> list[EntidadFinanciera]:
+        resp = await self._http.request(
+            "GET", "/entidades-financieras", params={"mercado": mercado}
+        )
+        if resp.status_code in (400, 422):
+            raise SolicitudInvalida(_detalle(resp))
+        _asegurar_ok(resp)
+        return [
+            EntidadFinanciera(
+                id=item["id"], nombre=item["nombre"], alias=tuple(item.get("alias", ()))
+            )
+            for item in resp.json()
+        ]
 
 
 def _detalle(resp: httpx.Response) -> str:

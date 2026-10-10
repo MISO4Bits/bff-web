@@ -9,7 +9,9 @@ from app.domain import (
     ConsentimientoVista,
     Cotizacion,
     CotizacionInput,
+    CreditosReportados,
     DocumentoLegal,
+    EntidadFinanciera,
     RegistroInput,
 )
 
@@ -78,3 +80,15 @@ class DocumentosLegalesPort(Protocol):
     async def obtener_version(
         self, tipo: str, version: str, mercado: str, idioma: str
     ) -> DocumentoLegal: ...
+
+
+@runtime_checkable
+class CreditosHipotecariosPort(Protocol):
+    async def obtener(self, cliente_id: str) -> CreditosReportados:
+        """Hipotecas abiertas que Perfilamiento guardó de Open Finance para el cliente."""
+        ...
+
+
+@runtime_checkable
+class EntidadesFinancierasPort(Protocol):
+    async def listar_entidades(self, mercado: str) -> list[EntidadFinanciera]: ...
