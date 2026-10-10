@@ -41,3 +41,17 @@ def test_por_defecto_solo_el_servidor_local_de_desarrollo():
     client = _cliente()
     assert _preflight(client, "http://localhost:4200").status_code == 200
     assert _preflight(client, "https://solventa4bits.com").status_code == 400
+
+
+def test_punto_de_entrada_tiene_cors_configurado():
+    from app.main import app
+
+    client = TestClient(app)
+    resp = client.options(
+        "/healthz",
+        headers={
+            "Origin": "http://localhost:4200",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert resp.headers["access-control-allow-origin"] == "http://localhost:4200"
