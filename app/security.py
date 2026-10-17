@@ -9,6 +9,7 @@ verificable en pruebas.
 from __future__ import annotations
 
 import time
+from datetime import date
 
 import jwt
 
@@ -25,9 +26,15 @@ class SessionIssuer:
         self._ttl = ttl_seconds
         self._refresh_ttl = refresh_ttl_seconds
 
-    def emitir(self, *, sub: str, cliente_id: str, email: str) -> Sesion:
+    def emitir(self, *, sub: str, cliente_id: str, email: str, fecha_nacimiento: date) -> Sesion:
         ahora = int(time.time())
-        base = {"sub": sub, "clienteId": cliente_id, "email": email, "iat": ahora}
+        base = {
+            "sub": sub,
+            "clienteId": cliente_id,
+            "email": email,
+            "fechaNacimiento": fecha_nacimiento.isoformat(),
+            "iat": ahora,
+        }
         access = jwt.encode(
             {**base, "typ": "access", "exp": ahora + self._ttl}, self._secret, algorithm=_ALG
         )
@@ -51,12 +58,33 @@ class SessionIssuer:
 
     def verificar(self, token: str) -> Claims:
         payload = self._decodificar(token, tipo="access")
-        return Claims(sub=payload["sub"], cliente_id=payload["clienteId"], email=payload["email"])
+        return Claims(
+            sub=payload["sub"],
+            cliente_id=payload["clienteId"],
+            email=payload["email"],
+            fecha_nacimiento=_fecha(payload),
+        )
 
     def refrescar(self, refresh_token: str) -> Sesion:
         payload = self._decodificar(refresh_token, tipo="refresh")
+        fecha = _fecha(payload)
+        if fecha is None:
+            # Sesión emitida antes de que la fecha de nacimiento viajara en el token: no se
+            # puede renovar, el cliente inicia sesión de nuevo.
+            raise NoAutorizado("la sesión está desactualizada: inicia sesión de nuevo")
         return self.emitir(
             sub=payload["sub"],
             cliente_id=payload["clienteId"],
             email=payload["email"],
+            fecha_nacimiento=fecha,
         )
+
+
+def _fecha(payload: dict) -> date | None:
+    crudo = payload.get("fechaNacimiento")
+    if crudo is None:
+        return None
+    try:
+        return date.fromisoformat(crudo)
+    except (TypeError, ValueError) as exc:
+        raise NoAutorizado("token inválido") from exc

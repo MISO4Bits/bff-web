@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import httpx
 import pytest_asyncio
 import respx
@@ -85,7 +87,9 @@ async def http_client():
         http_retries=1,
     )
     app = create_app(settings)
-    token = app.state.sessions.emitir(sub="s", cliente_id="cli-1", email="a@b.com").access_token
+    token = app.state.sessions.emitir(
+        sub="s", cliente_id="cli-1", email="a@b.com", fecha_nacimiento=date(1990, 1, 1)
+    ).access_token
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",

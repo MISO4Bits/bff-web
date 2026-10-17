@@ -68,9 +68,11 @@ class CoreIdentityPort(Protocol):
 
 @runtime_checkable
 class CotizacionPort(Protocol):
-    async def crear_cotizacion(self, cliente_id: str, entrada: CotizacionInput) -> Cotizacion: ...
+    async def crear_cotizacion(
+        self, cliente_id: str, edad: int, entrada: CotizacionInput
+    ) -> Cotizacion: ...
 
-    async def obtener_cotizacion(self, cliente_id: str, cotizacion_id: str) -> Cotizacion: ...
+    async def obtener_cotizacion_activa(self, cliente_id: str) -> Cotizacion: ...
 
 
 @runtime_checkable

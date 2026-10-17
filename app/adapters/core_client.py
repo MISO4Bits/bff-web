@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 import httpx
 
@@ -175,6 +176,7 @@ def _a_cliente(data: dict) -> ClienteCore:
         segundo_nombre=data.get("segundoNombre"),
         segundo_apellido=data.get("segundoApellido"),
         telefono=data["telefono"],
+        fecha_nacimiento=date.fromisoformat(data["fechaNacimiento"]),
     )
 
 

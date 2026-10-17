@@ -27,7 +27,6 @@ from app.api.schemas import (
 from app.domain import (
     Claims,
     CotizacionInput,
-    CuestionarioHabitosInput,
     DatosCreditoInput,
     NoAutorizado,
     RegistroInput,
@@ -240,20 +239,12 @@ async def revocar_mi_consentimiento(scope: str, claims: ClaimsDep, service: Serv
 
 def _a_dominio_cotizacion(payload: CotizacionRequest) -> CotizacionInput:
     dc = payload.datos_credito
-    q = payload.cuestionario_habitos
     return CotizacionInput(
         datos_credito=DatosCreditoInput(
             valor_credito=dc.valor_credito,
-            plazo_meses=dc.plazo_meses,
-            edad=dc.edad,
+            plazo_restante_meses=dc.plazo_restante_meses,
             entidad_acreedora=dc.entidad_acreedora,
             saldo_insoluto=dc.saldo_insoluto,
-        ),
-        cuestionario_habitos=CuestionarioHabitosInput(
-            consume_tabaco=q.consume_tabaco,
-            actividad_fisica=q.actividad_fisica,
-            condiciones_preexistentes=q.condiciones_preexistentes,
-            dependientes_economicos=q.dependientes_economicos,
         ),
     )
 
@@ -271,27 +262,24 @@ async def crear_cotizacion(
     service: ServiceDep,
 ) -> CotizacionOut:
     logger.info("POST /v1/cotizaciones: solicitud recibida cliente_id=%s", claims.cliente_id)
-    cotizacion = await service.crear_cotizacion(claims.cliente_id, _a_dominio_cotizacion(payload))
+    cotizacion = await service.crear_cotizacion(
+        claims.cliente_id, claims.fecha_nacimiento, _a_dominio_cotizacion(payload)
+    )
     return CotizacionOut.model_validate(cotizacion)
 
 
 @router.get(
-    "/cotizaciones/{cotizacion_id}",
+    "/cotizaciones/actual",
     response_model=CotizacionOut,
     response_model_exclude_none=True,
     tags=["Cotización"],
 )
-async def obtener_cotizacion(
-    cotizacion_id: str,
+async def obtener_cotizacion_activa(
     claims: ClaimsDep,
     service: ServiceDep,
 ) -> CotizacionOut:
-    logger.info(
-        "GET /v1/cotizaciones/%s: solicitud recibida cliente_id=%s",
-        sanear_para_log(cotizacion_id),
-        claims.cliente_id,
-    )
-    cotizacion = await service.obtener_cotizacion(claims.cliente_id, cotizacion_id)
+    logger.info("GET /v1/cotizaciones/actual: solicitud recibida cliente_id=%s", claims.cliente_id)
+    cotizacion = await service.obtener_cotizacion_activa(claims.cliente_id)
     return CotizacionOut.model_validate(cotizacion)
 
 

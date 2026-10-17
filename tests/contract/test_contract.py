@@ -74,21 +74,18 @@ async def test_respuestas_cumplen_el_contrato(client, app, openapi_spec):
     solicitud_cotizacion = {
         "datosCredito": {
             "valorCredito": 120000000,
-            "plazoMeses": 120,
-            "edad": 35,
+            "plazoRestanteMeses": 120,
             "entidadAcreedora": "Banco Solventa",
             "saldoInsoluto": 100000000,
-        },
-        "cuestionarioHabitos": {
-            "consumeTabaco": False,
-            "actividadFisica": "REGULAR",
-            "condicionesPreexistentes": False,
-            "dependientesEconomicos": 1,
         },
     }
     cotizacion = await client.post("/v1/cotizaciones", headers=headers, json=solicitud_cotizacion)
     assert cotizacion.status_code == 201
     _validar(openapi_spec, "Cotizacion", cotizacion.json())
+
+    activa = await client.get("/v1/cotizaciones/actual", headers=headers)
+    assert activa.status_code == 200
+    _validar(openapi_spec, "Cotizacion", activa.json())
 
     disponibilidad = await client.get(
         "/v1/registro/disponibilidad", params={"correo": "otro@example.com"}

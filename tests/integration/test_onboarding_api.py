@@ -7,16 +7,9 @@ from tests.conftest import REGISTRO_VALIDO
 SOLICITUD_COTIZACION = {
     "datosCredito": {
         "valorCredito": 120000000,
-        "plazoMeses": 120,
-        "edad": 35,
+        "plazoRestanteMeses": 120,
         "entidadAcreedora": "Banco Solventa",
         "saldoInsoluto": 100000000,
-    },
-    "cuestionarioHabitos": {
-        "consumeTabaco": False,
-        "actividadFisica": "REGULAR",
-        "condicionesPreexistentes": False,
-        "dependientesEconomicos": 1,
     },
 }
 
@@ -227,13 +220,48 @@ async def test_journey_cotizacion(cliente_autenticado):
     creada = await client.post("/v1/cotizaciones", headers=headers, json=SOLICITUD_COTIZACION)
     assert creada.status_code == 201
     cuerpo = creada.json()
+    assert "id" not in cuerpo
     assert cuerpo["estado"] == "VIGENTE"
     assert cuerpo["producto"] == "VIDA_HIPOTECARIO"
+    assert cuerpo["origenDatos"] == "DECLARADO"
+    assert cuerpo["datosCredito"]["entidadAcreedora"] == "Banco Solventa"
     assert cuerpo["oferta"]["primaMensual"] > 0
 
-    obtenida = await client.get(f"/v1/cotizaciones/{cuerpo['id']}", headers=headers)
-    assert obtenida.status_code == 200
-    assert obtenida.json()["id"] == cuerpo["id"]
+    activa = await client.get("/v1/cotizaciones/actual", headers=headers)
+    assert activa.status_code == 200
+    assert activa.json() == cuerpo
+
+
+async def test_una_cotizacion_nueva_reemplaza_a_la_activa(cliente_autenticado):
+    client, headers = cliente_autenticado
+    await client.post("/v1/cotizaciones", headers=headers, json=SOLICITUD_COTIZACION)
+    otra = {
+        "datosCredito": {
+            **SOLICITUD_COTIZACION["datosCredito"],
+            "entidadAcreedora": "Otro Banco",
+            "saldoInsoluto": 80000000,
+        }
+    }
+
+    await client.post("/v1/cotizaciones", headers=headers, json=otra)
+
+    activa = (await client.get("/v1/cotizaciones/actual", headers=headers)).json()
+    assert activa["datosCredito"]["entidadAcreedora"] == "Otro Banco"
+
+
+async def test_la_solicitud_no_acepta_edad_ni_cuestionario(cliente_autenticado):
+    client, headers = cliente_autenticado
+    for extra in ({"edad": 35}, {"cuestionarioHabitos": {"consumeTabaco": False}}):
+        resp = await client.post(
+            "/v1/cotizaciones", headers=headers, json={**SOLICITUD_COTIZACION, **extra}
+        )
+        assert resp.status_code == 400
+
+
+async def test_la_ruta_por_id_ya_no_existe(cliente_autenticado):
+    client, headers = cliente_autenticado
+    resp = await client.get("/v1/cotizaciones/algun-id", headers=headers)
+    assert resp.status_code == 404
 
 
 async def test_cotizacion_sin_token_devuelve_401(client):
@@ -241,7 +269,33 @@ async def test_cotizacion_sin_token_devuelve_401(client):
     assert resp.status_code == 401
 
 
-async def test_cotizacion_inexistente_devuelve_404(cliente_autenticado):
+async def test_sin_cotizacion_activa_devuelve_404(cliente_autenticado):
     client, headers = cliente_autenticado
-    resp = await client.get("/v1/cotizaciones/no-existe", headers=headers)
+    resp = await client.get("/v1/cotizaciones/actual", headers=headers)
     assert resp.status_code == 404
+
+
+async def test_una_sesion_sin_fecha_de_nacimiento_pide_iniciar_sesion_de_nuevo(client):
+    import time
+
+    import jwt
+
+    token = jwt.encode(
+        {
+            "sub": "s",
+            "clienteId": "cli-1",
+            "email": "a@b.com",
+            "typ": "access",
+            "exp": int(time.time()) + 60,
+        },
+        "test-secret",
+        algorithm="HS256",
+    )
+
+    resp = await client.post(
+        "/v1/cotizaciones",
+        headers={"Authorization": f"Bearer {token}"},
+        json=SOLICITUD_COTIZACION,
+    )
+
+    assert resp.status_code == 401

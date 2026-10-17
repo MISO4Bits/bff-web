@@ -392,11 +392,18 @@ paths:
       tags: [Cotización]
       summary: Cotiza un seguro de vida sobre crédito hipotecario
       description: |
-        Reenvía la solicitud a Cotización y Rating (EXP-01, BITS-81) usando el
-        `clienteId` de la sesión autenticada — el cliente no puede cotizar en
-        nombre de otro. Cotización y Rating intenta perfilar el riesgo; si esa
-        dependencia no responde, cae a tarifa estándar (`personalizado: false`)
-        en vez de fallar la cotización completa.
+        Calcula la cotización y la deja como **la activa** del cliente: una nueva reemplaza a
+        la anterior (el cliente no acumula cotizaciones, compra pólizas). La cotización no
+        tiene id propio.
+
+        La identidad sale de la sesión: el cliente no puede cotizar en nombre de otro. La edad
+        tampoco viaja en la solicitud: el BFF la calcula de la fecha de nacimiento de la sesión.
+        Una sesión emitida antes de ese cambio responde `401`: hay que iniciar sesión de nuevo.
+
+        Cotización y Rating intenta perfilar el riesgo; si esa dependencia no responde, cae a
+        tarifa estándar (`personalizado: false`) en vez de fallar. Responde `400` con el campo
+        y el rango cuando la edad no está entre 18 y 65 años, o cuando el crédito terminaría
+        después de los 75 años.
       requestBody:
         required: true
         content:
@@ -404,7 +411,7 @@ paths:
             schema: { $ref: '#/components/schemas/CotizacionRequest' }
       responses:
         '201':
-          description: Cotización creada.
+          description: Cotización creada. Es ahora la activa del cliente.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Cotizacion' }
@@ -413,19 +420,17 @@ paths:
         '422': { $ref: '#/components/responses/EntidadNoProcesable' }
         '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
 
-  /v1/cotizaciones/{cotizacionId}:
-    parameters:
-      - name: cotizacionId
-        in: path
-        required: true
-        schema: { type: string }
+  /v1/cotizaciones/actual:
     get:
-      operationId: obtenerCotizacion
+      operationId: obtenerCotizacionActiva
       tags: [Cotización]
-      summary: Consulta una cotización propia
+      summary: Consulta la cotización activa del cliente
+      description: |
+        La cotización activa del cliente de la sesión, para mostrarla en el Home y retomarla.
+        `estado` es `EXPIRADA` pasados 30 días de su creación.
       responses:
         '200':
-          description: Cotización encontrada.
+          description: Cotización activa.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Cotizacion' }
@@ -840,43 +845,29 @@ components:
     DatosCredito:
       type: object
       additionalProperties: false
-      required: [valorCredito, plazoMeses, edad, entidadAcreedora, saldoInsoluto]
+      required: [valorCredito, plazoRestanteMeses, entidadAcreedora, saldoInsoluto]
       properties:
         valorCredito: { type: number, minimum: 10000000 }
-        plazoMeses: { type: integer, minimum: 12, maximum: 480 }
-        edad: { type: integer, minimum: 18, maximum: 65 }
+        plazoRestanteMeses:
+          type: integer
+          minimum: 1
+          maximum: 480
+          description: Meses que le faltan al crédito. Con la edad, no puede pasar de los 75 años.
         entidadAcreedora: { type: string, minLength: 2, maxLength: 80 }
         saldoInsoluto: { type: number, exclusiveMinimum: 0 }
-
-    CuestionarioHabitos:
-      type: object
-      additionalProperties: false
-      required: [consumeTabaco, actividadFisica, condicionesPreexistentes, dependientesEconomicos]
-      properties:
-        consumeTabaco: { type: boolean }
-        actividadFisica: { type: string, enum: [NUNCA, OCASIONAL, REGULAR] }
-        condicionesPreexistentes: { type: boolean }
-        dependientesEconomicos: { type: integer, minimum: 0, maximum: 20 }
 
     CotizacionRequest:
       type: object
       additionalProperties: false
-      required: [datosCredito, cuestionarioHabitos]
+      required: [datosCredito]
       examples:
         - datosCredito:
             valorCredito: 250000000
-            plazoMeses: 180
-            edad: 36
+            plazoRestanteMeses: 180
             entidadAcreedora: Bancolombia
             saldoInsoluto: 238500000
-          cuestionarioHabitos:
-            consumeTabaco: false
-            actividadFisica: REGULAR
-            condicionesPreexistentes: false
-            dependientesEconomicos: 2
       properties:
         datosCredito: { $ref: '#/components/schemas/DatosCredito' }
-        cuestionarioHabitos: { $ref: '#/components/schemas/CuestionarioHabitos' }
 
     FactorRiesgo:
       type: object
@@ -984,14 +975,19 @@ components:
     Cotizacion:
       type: object
       additionalProperties: false
-      required: [id, estado, producto, oferta, vigenciaCotizacion, creadaEn]
+      required: [estado, producto, datosCredito, origenDatos, oferta, vigenciaCotizacion, creadaEn]
       examples:
-        - id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
-          estado: VIGENTE
+        - estado: VIGENTE
           producto: VIDA_HIPOTECARIO
+          datosCredito:
+            valorCredito: 250000000
+            plazoRestanteMeses: 180
+            entidadAcreedora: Bancolombia
+            saldoInsoluto: 238500000
+          origenDatos: DECLARADO
           oferta:
-            primaMensual: 96500
-            primaBaseMensual: 112000
+            primaMensual: 39734
+            primaBaseMensual: 46746
             sumaAsegurada: 238500000
             coberturaMeses: 180
             moneda: COP
@@ -999,10 +995,10 @@ components:
           perfilRiesgo:
             nivelRiesgo: BAJO
             factores:
-              - descripcion: Historial de pagos al día en los últimos 24 meses
+              - descripcion: Historial de pagos excelente
                 efecto: POSITIVO
-                pesoRelativo: 0.4
-              - descripcion: Actividad física regular
+                pesoRelativo: 0.1
+              - descripcion: Endeudamiento bajo
                 efecto: POSITIVO
                 pesoRelativo: 0.2
           vigenciaCotizacion:
@@ -1010,9 +1006,13 @@ components:
             hasta: '2026-11-05T14:35:00Z'
           creadaEn: '2026-10-06T14:35:00Z'
       properties:
-        id: { type: string }
         estado: { type: string, enum: [VIGENTE, EXPIRADA] }
         producto: { type: string, const: VIDA_HIPOTECARIO }
+        datosCredito: { $ref: '#/components/schemas/DatosCredito' }
+        origenDatos:
+          type: string
+          enum: [DECLARADO]
+          description: De dónde salen los datos del crédito. Hoy los escribe el cliente.
         oferta: { $ref: '#/components/schemas/Oferta' }
         perfilRiesgo:
           oneOf:

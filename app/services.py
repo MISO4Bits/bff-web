@@ -8,6 +8,7 @@ import re
 import time
 import unicodedata
 from collections.abc import Callable
+from datetime import date
 
 from app.domain import (
     ESTADO_DISPONIBLE,
@@ -26,6 +27,8 @@ from app.domain import (
     RecursoNoEncontrado,
     RegistroInput,
     Sesion,
+    calcular_edad,
+    hoy_en_colombia,
 )
 from app.logging_utils import sanear_para_log
 from app.ports import (
@@ -48,7 +51,9 @@ class OnboardingService:
         core: CoreIdentityPort,
         cotizacion: CotizacionPort,
         sessions: SessionIssuer,
+        hoy: Callable[[], date] = hoy_en_colombia,
     ) -> None:
+        self._hoy = hoy
         self._identity = identity
         self._core = core
         self._cotizacion = cotizacion
@@ -72,7 +77,10 @@ class OnboardingService:
             if existente is not None:
                 logger.info("registrar: reintento idempotente cliente_id=%s", existente.id)
                 sesion = self._sessions.emitir(
-                    sub=sub, cliente_id=existente.id, email=existente.email
+                    sub=sub,
+                    cliente_id=existente.id,
+                    email=existente.email,
+                    fecha_nacimiento=existente.fecha_nacimiento,
                 )
                 return Cuenta.desde_core(existente), sesion
             # Credencial huérfana (el alta en Core nunca se completó): se termina el
@@ -103,7 +111,12 @@ class OnboardingService:
                 await self._compensar(sub)
             raise
 
-        sesion = self._sessions.emitir(sub=sub, cliente_id=cliente.id, email=cliente.email)
+        sesion = self._sessions.emitir(
+            sub=sub,
+            cliente_id=cliente.id,
+            email=cliente.email,
+            fecha_nacimiento=datos.fecha_nacimiento,
+        )
         logger.info("registrar: registro completado cliente_id=%s", cliente.id)
         return Cuenta.desde_core(cliente), sesion
 
@@ -131,7 +144,12 @@ class OnboardingService:
         sub = await self._identity.autenticar(email, password)
         cliente = await self._core.buscar_cliente_por_identidad(sub)
         logger.info("iniciar_sesion: sesión iniciada cliente_id=%s", cliente.id)
-        return self._sessions.emitir(sub=sub, cliente_id=cliente.id, email=cliente.email)
+        return self._sessions.emitir(
+            sub=sub,
+            cliente_id=cliente.id,
+            email=cliente.email,
+            fecha_nacimiento=cliente.fecha_nacimiento,
+        )
 
     def refrescar(self, refresh_token: str) -> Sesion:
         return self._sessions.refrescar(refresh_token)
@@ -182,23 +200,27 @@ class OnboardingService:
         )
         await self._core.revocar_consentimiento(cliente_id, scope)
 
-    async def crear_cotizacion(self, cliente_id: str, entrada: CotizacionInput) -> Cotizacion:
+    async def crear_cotizacion(
+        self, cliente_id: str, fecha_nacimiento: date | None, entrada: CotizacionInput
+    ) -> Cotizacion:
+        """Cotiza con la edad derivada de la fecha de nacimiento de la sesión.
+
+        La cotización queda como la activa del cliente (reemplaza la anterior).
+        """
+        if fecha_nacimiento is None:
+            # Sesión emitida antes de que la fecha viajara en el token.
+            raise NoAutorizado("la sesión está desactualizada: inicia sesión de nuevo")
+        edad = calcular_edad(fecha_nacimiento, self._hoy())
         logger.info(
             "crear_cotizacion: solicitando cotización a svc-cotizacion cliente_id=%s", cliente_id
         )
-        cotizacion = await self._cotizacion.crear_cotizacion(cliente_id, entrada)
-        logger.info(
-            "crear_cotizacion: cotización creada id=%s estado=%s", cotizacion.id, cotizacion.estado
-        )
+        cotizacion = await self._cotizacion.crear_cotizacion(cliente_id, edad, entrada)
+        logger.info("crear_cotizacion: cotización activa estado=%s", cotizacion.estado)
         return cotizacion
 
-    async def obtener_cotizacion(self, cliente_id: str, cotizacion_id: str) -> Cotizacion:
-        logger.info(
-            "obtener_cotizacion: consultando id=%s cliente_id=%s",
-            sanear_para_log(cotizacion_id),
-            cliente_id,
-        )
-        return await self._cotizacion.obtener_cotizacion(cliente_id, cotizacion_id)
+    async def obtener_cotizacion_activa(self, cliente_id: str) -> Cotizacion:
+        logger.info("obtener_cotizacion_activa: consultando cliente_id=%s", cliente_id)
+        return await self._cotizacion.obtener_cotizacion_activa(cliente_id)
 
 
 class DocumentosLegalesService:
