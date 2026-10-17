@@ -1,4 +1,8 @@
-"""Adaptador HTTP hacia svc-cotizacion (``CotizacionPort``)."""
+"""Adaptador HTTP hacia svc-cotizacion (``CotizacionPort``).
+
+POST /v1/cotizaciones        crea la cotización y la deja como la activa del cliente
+GET  /v1/cotizaciones/actual la cotización activa del cliente
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,7 @@ from app.domain import (
     BffError,
     Cotizacion,
     CotizacionInput,
+    DatosCreditoInput,
     FactorRiesgo,
     Oferta,
     PerfilRiesgo,
@@ -19,7 +24,6 @@ from app.domain import (
     SolicitudInvalida,
     Vigencia,
 )
-from app.logging_utils import sanear_para_log
 from app.resilience import ResilientHttpClient
 
 logger = logging.getLogger("bff_web.adapters.cotizacion")
@@ -32,51 +36,49 @@ class CotizacionClientAdapter:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def crear_cotizacion(self, cliente_id: str, entrada: CotizacionInput) -> Cotizacion:
+    async def crear_cotizacion(
+        self, cliente_id: str, edad: int, entrada: CotizacionInput
+    ) -> Cotizacion:
         dc = entrada.datos_credito
-        q = entrada.cuestionario_habitos
         cuerpo = {
+            "edad": edad,
             "datosCredito": {
                 "valorCredito": str(dc.valor_credito),
-                "plazoMeses": dc.plazo_meses,
-                "edad": dc.edad,
+                "plazoRestanteMeses": dc.plazo_restante_meses,
                 "entidadAcreedora": dc.entidad_acreedora,
                 "saldoInsoluto": str(dc.saldo_insoluto),
             },
-            "cuestionarioHabitos": {
-                "consumeTabaco": q.consume_tabaco,
-                "actividadFisica": q.actividad_fisica,
-                "condicionesPreexistentes": q.condiciones_preexistentes,
-                "dependientesEconomicos": q.dependientes_economicos,
-            },
         }
         resp = await self._http.request(
-            "POST", "/cotizaciones", json=cuerpo, headers={"X-Cliente-Id": cliente_id}
+            "POST", "/v1/cotizaciones", json=cuerpo, headers={"X-Cliente-Id": cliente_id}
         )
         if resp.status_code in (400, 422):
-            logger.info("solicitud inválida (%s)", _detalle(resp))
-            raise SolicitudInvalida(_detalle(resp))
+            detalle, errores = _problema(resp)
+            logger.info("solicitud inválida (%s)", detalle)
+            raise SolicitudInvalida(detalle, errores=errores)
         _asegurar_ok(resp, esperado=201)
         cotizacion = _a_cotizacion(resp.json())
-        logger.info("cotización creada id=%s estado=%s", cotizacion.id, cotizacion.estado)
+        logger.info("cotización activa creada estado=%s", cotizacion.estado)
         return cotizacion
 
-    async def obtener_cotizacion(self, cliente_id: str, cotizacion_id: str) -> Cotizacion:
+    async def obtener_cotizacion_activa(self, cliente_id: str) -> Cotizacion:
         resp = await self._http.request(
-            "GET", f"/cotizaciones/{cotizacion_id}", headers={"X-Cliente-Id": cliente_id}
+            "GET", "/v1/cotizaciones/actual", headers={"X-Cliente-Id": cliente_id}
         )
         if resp.status_code == 404:
-            logger.info("cotización no encontrada id=%s", sanear_para_log(cotizacion_id))
-            raise RecursoNoEncontrado("Cotización no encontrada")
+            logger.info("el cliente no tiene cotización activa")
+            raise RecursoNoEncontrado("El cliente no tiene una cotización activa")
         _asegurar_ok(resp)
         return _a_cotizacion(resp.json())
 
 
-def _detalle(resp: httpx.Response) -> str:
+def _problema(resp: httpx.Response) -> tuple[str, list[dict[str, str]] | None]:
+    """Detalle y errores por campo del Problem Details de svc-cotizacion."""
     try:
-        return resp.json().get("detail", "")
+        cuerpo = resp.json()
     except ValueError:  # pragma: no cover
-        return ""
+        return "", None
+    return cuerpo.get("detail", ""), cuerpo.get("errores") or None
 
 
 def _asegurar_ok(resp: httpx.Response, *, esperado: int = 200) -> None:
@@ -88,10 +90,17 @@ def _a_cotizacion(data: dict) -> Cotizacion:
     oferta = data["oferta"]
     perfil = data.get("perfilRiesgo")
     vigencia = data["vigenciaCotizacion"]
+    credito = data["datosCredito"]
     return Cotizacion(
-        id=data["id"],
         estado=data["estado"],
         producto=data["producto"],
+        datos_credito=DatosCreditoInput(
+            valor_credito=Decimal(str(credito["valorCredito"])),
+            plazo_restante_meses=credito["plazoRestanteMeses"],
+            entidad_acreedora=credito["entidadAcreedora"],
+            saldo_insoluto=Decimal(str(credito["saldoInsoluto"])),
+        ),
+        origen_datos=data["origenDatos"],
         oferta=Oferta(
             prima_mensual=float(Decimal(str(oferta["primaMensual"]))),
             prima_base_mensual=float(Decimal(str(oferta["primaBaseMensual"]))),

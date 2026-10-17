@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
 
@@ -48,6 +48,7 @@ class ClienteCore:
     email: str
     estado: str
     telefono: str
+    fecha_nacimiento: date
     correo_confirmado: bool = False
     segundo_nombre: str | None = None
     segundo_apellido: str | None = None
@@ -116,32 +117,39 @@ class Claims:
     sub: str
     cliente_id: str
     email: str
+    fecha_nacimiento: date | None = None
 
 
 # --- cotización (orquesta hacia Cotización y Rating, ver CotizacionPort) ---
 
+# Colombia no tiene horario de verano: UTC-5 fijo, sin depender de la base de zonas horarias.
+ZONA_COLOMBIA = timezone(timedelta(hours=-5))
+
+
+def hoy_en_colombia() -> date:
+    return datetime.now(UTC).astimezone(ZONA_COLOMBIA).date()
+
+
+def calcular_edad(fecha_nacimiento: date, hoy: date) -> int:
+    """Años cumplidos a la fecha ``hoy``."""
+    cumplio = (hoy.month, hoy.day) >= (fecha_nacimiento.month, fecha_nacimiento.day)
+    return hoy.year - fecha_nacimiento.year - (0 if cumplio else 1)
+
 
 @dataclass(frozen=True)
 class DatosCreditoInput:
+    """Datos del crédito que el cliente elige o escribe. La edad no viaja aquí: la deriva el
+    BFF de la fecha de nacimiento de la sesión."""
+
     valor_credito: Decimal
-    plazo_meses: int
-    edad: int
+    plazo_restante_meses: int
     entidad_acreedora: str
     saldo_insoluto: Decimal
 
 
 @dataclass(frozen=True)
-class CuestionarioHabitosInput:
-    consume_tabaco: bool
-    actividad_fisica: str
-    condiciones_preexistentes: bool
-    dependientes_economicos: int
-
-
-@dataclass(frozen=True)
 class CotizacionInput:
     datos_credito: DatosCreditoInput
-    cuestionario_habitos: CuestionarioHabitosInput
 
 
 @dataclass(frozen=True)
@@ -176,9 +184,12 @@ class Vigencia:
 
 @dataclass(frozen=True)
 class Cotizacion:
-    id: str
+    """La cotización activa del cliente. No tiene id: es única y una nueva la reemplaza."""
+
     estado: str
     producto: str
+    datos_credito: DatosCreditoInput
+    origen_datos: str
     oferta: Oferta
     vigencia_cotizacion: Vigencia
     creada_en: datetime

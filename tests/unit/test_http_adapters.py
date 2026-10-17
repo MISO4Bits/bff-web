@@ -17,7 +17,6 @@ from app.domain import (
     BffError,
     Conflicto,
     CotizacionInput,
-    CuestionarioHabitosInput,
     DatosCreditoInput,
     NoAutorizado,
     RecursoNoEncontrado,
@@ -34,16 +33,9 @@ COTIZACION = "http://cotizacion.local"
 ENTRADA_COTIZACION = CotizacionInput(
     datos_credito=DatosCreditoInput(
         valor_credito=Decimal("120000000"),
-        plazo_meses=120,
-        edad=35,
+        plazo_restante_meses=120,
         entidad_acreedora="Banco Solventa",
         saldo_insoluto=Decimal("100000000"),
-    ),
-    cuestionario_habitos=CuestionarioHabitosInput(
-        consume_tabaco=False,
-        actividad_fisica="REGULAR",
-        condiciones_preexistentes=False,
-        dependientes_economicos=1,
     ),
 )
 
@@ -88,9 +80,15 @@ def _cotizacion() -> CotizacionClientAdapter:
 
 def _cotizacion_json(**overrides) -> dict:
     base = {
-        "id": "cot-1",
         "estado": "VIGENTE",
         "producto": "VIDA_HIPOTECARIO",
+        "datosCredito": {
+            "valorCredito": 120000000,
+            "plazoRestanteMeses": 120,
+            "entidadAcreedora": "Banco Solventa",
+            "saldoInsoluto": 100000000,
+        },
+        "origenDatos": "DECLARADO",
         "oferta": {
             "primaMensual": 45000.0,
             "primaBaseMensual": 45000.0,
@@ -175,6 +173,7 @@ async def test_core_registrar_cliente_ok_y_conflicto():
                 "email": "ana@example.com",
                 "estado": "ACTIVO",
                 "telefono": "+573001234567",
+                "fechaNacimiento": "1990-01-01",
             },
         )
     )
@@ -225,6 +224,7 @@ async def test_core_registrar_cliente_reenvia_la_idempotency_key():
                 "email": "ana@example.com",
                 "estado": "ACTIVO",
                 "telefono": "+573001234567",
+                "fechaNacimiento": "1990-01-01",
             },
         )
     )
@@ -381,6 +381,7 @@ async def test_core_existe_cliente_y_confirmar_cliente():
                 "email": "ana@example.com",
                 "estado": "ACTIVO",
                 "telefono": "+573001234567",
+                "fechaNacimiento": "1990-01-01",
                 "correoConfirmado": True,
             },
         )
@@ -451,6 +452,7 @@ async def test_core_buscar_por_identidad():
                 "email": "ana@example.com",
                 "estado": "ACTIVO",
                 "telefono": "+573001234567",
+                "fechaNacimiento": "1990-01-01",
             },
         )
     )
@@ -477,24 +479,30 @@ async def test_factory_fake_y_http_y_error():
 
 
 @respx.mock
-async def test_cotizacion_crear_ok_envia_cliente_id_y_decimales_como_texto():
-    ruta = respx.post(f"{COTIZACION}/cotizaciones").mock(
+async def test_cotizacion_crear_envia_edad_cliente_id_y_decimales_como_texto():
+    ruta = respx.post(f"{COTIZACION}/v1/cotizaciones").mock(
         return_value=httpx.Response(201, json=_cotizacion_json())
     )
     adapter = _cotizacion()
     try:
-        cotizacion = await adapter.crear_cotizacion("cliente-1", ENTRADA_COTIZACION)
-        assert cotizacion.id == "cot-1"
+        cotizacion = await adapter.crear_cotizacion("cliente-1", 35, ENTRADA_COTIZACION)
         assert cotizacion.oferta.prima_mensual == 45000.0
         assert cotizacion.perfil_riesgo is None
+        assert cotizacion.origen_datos == "DECLARADO"
+        assert cotizacion.datos_credito.entidad_acreedora == "Banco Solventa"
+        assert cotizacion.datos_credito.plazo_restante_meses == 120
 
         enviado = ruta.calls.last.request
         assert enviado.headers["x-cliente-id"] == "cliente-1"
-        import json as _json
-
-        cuerpo = _json.loads(enviado.content)
-        assert cuerpo["datosCredito"]["valorCredito"] == "120000000"
-        assert cuerpo["datosCredito"]["saldoInsoluto"] == "100000000"
+        cuerpo = json.loads(enviado.content)
+        assert cuerpo["edad"] == 35
+        assert cuerpo["datosCredito"] == {
+            "valorCredito": "120000000",
+            "plazoRestanteMeses": 120,
+            "entidadAcreedora": "Banco Solventa",
+            "saldoInsoluto": "100000000",
+        }
+        assert "cuestionarioHabitos" not in cuerpo
     finally:
         await adapter.aclose()
 
@@ -514,59 +522,65 @@ async def test_cotizacion_crear_con_perfil_riesgo():
         perfilRiesgo={
             "nivelRiesgo": "ALTO",
             "factores": [
-                {"descripcion": "fumador", "efecto": "NEGATIVO", "pesoRelativo": 0.4},
+                {"descripcion": "Endeudamiento alto", "efecto": "NEGATIVO", "pesoRelativo": 0.4},
             ],
         },
     )
-    respx.post(f"{COTIZACION}/cotizaciones").mock(return_value=httpx.Response(201, json=payload))
+    respx.post(f"{COTIZACION}/v1/cotizaciones").mock(return_value=httpx.Response(201, json=payload))
     adapter = _cotizacion()
     try:
-        cotizacion = await adapter.crear_cotizacion("cliente-1", ENTRADA_COTIZACION)
+        cotizacion = await adapter.crear_cotizacion("cliente-1", 35, ENTRADA_COTIZACION)
         assert cotizacion.oferta.personalizado is True
         assert cotizacion.perfil_riesgo.nivel_riesgo == "ALTO"
-        assert cotizacion.perfil_riesgo.factores[0].descripcion == "fumador"
+        assert cotizacion.perfil_riesgo.factores[0].descripcion == "Endeudamiento alto"
     finally:
         await adapter.aclose()
 
 
 @respx.mock
-async def test_cotizacion_crear_solicitud_invalida():
-    respx.post(f"{COTIZACION}/cotizaciones").mock(
-        return_value=httpx.Response(422, json={"detail": "regla de negocio"})
+@pytest.mark.parametrize("estado", [400, 422])
+async def test_cotizacion_crear_solicitud_invalida_conserva_el_campo_y_el_rango(estado):
+    errores = [{"campo": "edad", "mensaje": "Debe estar entre 18 y 65 años"}]
+    respx.post(f"{COTIZACION}/v1/cotizaciones").mock(
+        return_value=httpx.Response(estado, json={"detail": "fuera de rango", "errores": errores})
     )
     adapter = _cotizacion()
     try:
-        with pytest.raises(SolicitudInvalida):
-            await adapter.crear_cotizacion("cliente-1", ENTRADA_COTIZACION)
+        with pytest.raises(SolicitudInvalida) as error:
+            await adapter.crear_cotizacion("cliente-1", 70, ENTRADA_COTIZACION)
+        assert error.value.errores == errores
     finally:
         await adapter.aclose()
 
 
 @respx.mock
-async def test_cotizacion_obtener_ok_y_404():
-    respx.get(f"{COTIZACION}/cotizaciones/cot-1").mock(
+async def test_cotizacion_activa_ok_y_404():
+    ruta = respx.get(f"{COTIZACION}/v1/cotizaciones/actual").mock(
         return_value=httpx.Response(200, json=_cotizacion_json())
     )
     adapter = _cotizacion()
     try:
-        cotizacion = await adapter.obtener_cotizacion("cliente-1", "cot-1")
-        assert cotizacion.id == "cot-1"
+        cotizacion = await adapter.obtener_cotizacion_activa("cliente-1")
+        assert cotizacion.estado == "VIGENTE"
+        assert ruta.calls.last.request.headers["x-cliente-id"] == "cliente-1"
 
-        respx.get(f"{COTIZACION}/cotizaciones/no-existe").mock(
+        respx.get(f"{COTIZACION}/v1/cotizaciones/actual").mock(
             return_value=httpx.Response(404, json={})
         )
         with pytest.raises(RecursoNoEncontrado):
-            await adapter.obtener_cotizacion("cliente-1", "no-existe")
+            await adapter.obtener_cotizacion_activa("cliente-1")
     finally:
         await adapter.aclose()
 
 
 @respx.mock
 async def test_cotizacion_error_5xx():
-    respx.get(f"{COTIZACION}/cotizaciones/cot-1").mock(return_value=httpx.Response(500, json={}))
+    respx.get(f"{COTIZACION}/v1/cotizaciones/actual").mock(
+        return_value=httpx.Response(500, json={})
+    )
     adapter = _cotizacion()
     try:
         with pytest.raises(BffError):
-            await adapter.obtener_cotizacion("cliente-1", "cot-1")
+            await adapter.obtener_cotizacion_activa("cliente-1")
     finally:
         await adapter.aclose()

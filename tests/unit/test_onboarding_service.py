@@ -10,7 +10,6 @@ from app.domain import (
     ClienteCore,
     Conflicto,
     CotizacionInput,
-    CuestionarioHabitosInput,
     DatosCreditoInput,
     DependenciaNoDisponible,
     NoAutorizado,
@@ -326,40 +325,108 @@ async def test_compensacion_tolera_fallo_al_revertir(identity, core, caplog):
 ENTRADA_COTIZACION = CotizacionInput(
     datos_credito=DatosCreditoInput(
         valor_credito=Decimal("120000000"),
-        plazo_meses=120,
-        edad=35,
+        plazo_restante_meses=120,
         entidad_acreedora="Banco Solventa",
         saldo_insoluto=Decimal("100000000"),
     ),
-    cuestionario_habitos=CuestionarioHabitosInput(
-        consume_tabaco=False,
-        actividad_fisica="REGULAR",
-        condiciones_preexistentes=False,
-        dependientes_economicos=1,
-    ),
 )
+
+NACIMIENTO = date(1990, 6, 15)
 
 
 async def test_crear_cotizacion_via_service(service):
-    cotizacion = await service.crear_cotizacion("cliente-1", ENTRADA_COTIZACION)
+    cotizacion = await service.crear_cotizacion("cliente-1", NACIMIENTO, ENTRADA_COTIZACION)
 
-    assert cotizacion.id
     assert cotizacion.estado == "VIGENTE"
     assert cotizacion.oferta.prima_mensual > 0
     assert cotizacion.oferta.personalizado is False  # FakeCotizacion no perfila
+    assert cotizacion.datos_credito == ENTRADA_COTIZACION.datos_credito
+    assert cotizacion.origen_datos == "DECLARADO"
 
 
-async def test_obtener_cotizacion_via_service(service):
-    creada = await service.crear_cotizacion("cliente-1", ENTRADA_COTIZACION)
-    obtenida = await service.obtener_cotizacion("cliente-1", creada.id)
-    assert obtenida.id == creada.id
+@pytest.mark.parametrize(
+    ("hoy", "edad"),
+    [
+        (date(2026, 6, 14), 35),  # un día antes del cumpleaños 36
+        (date(2026, 6, 15), 36),  # el día del cumpleaños ya los cumplió
+        (date(2026, 12, 31), 36),
+        (date(2027, 1, 1), 36),
+    ],
+)
+async def test_la_edad_se_deriva_de_la_fecha_de_nacimiento(identity, core, cotizacion, hoy, edad):
+    service = OnboardingService(
+        identity, core, cotizacion, SessionIssuer("secreto"), hoy=lambda: hoy
+    )
+
+    await service.crear_cotizacion("cliente-1", NACIMIENTO, ENTRADA_COTIZACION)
+
+    assert cotizacion.ultima_edad == edad
 
 
-async def test_obtener_cotizacion_inexistente(service):
+@pytest.mark.parametrize(
+    ("nacimiento", "hoy", "edad"),
+    [
+        (date(2000, 2, 29), date(2026, 2, 28), 25),  # nacido un 29 de febrero
+        (date(2000, 2, 29), date(2026, 3, 1), 26),
+        (date(1990, 1, 1), date(1990, 1, 1), 0),
+    ],
+)
+def test_calcular_edad_en_los_bordes(nacimiento, hoy, edad):
+    from app.domain import calcular_edad
+
+    assert calcular_edad(nacimiento, hoy) == edad
+
+
+async def test_sin_fecha_de_nacimiento_en_la_sesion_pide_iniciar_sesion_de_nuevo(service):
+    with pytest.raises(NoAutorizado):
+        await service.crear_cotizacion("cliente-1", None, ENTRADA_COTIZACION)
+
+
+async def test_obtener_cotizacion_activa_via_service(service):
+    creada = await service.crear_cotizacion("cliente-1", NACIMIENTO, ENTRADA_COTIZACION)
+    obtenida = await service.obtener_cotizacion_activa("cliente-1")
+    assert obtenida == creada
+
+
+async def test_una_cotizacion_nueva_reemplaza_a_la_activa(service):
+    await service.crear_cotizacion("cliente-1", NACIMIENTO, ENTRADA_COTIZACION)
+    otra = CotizacionInput(
+        datos_credito=DatosCreditoInput(
+            valor_credito=Decimal("300000000"),
+            plazo_restante_meses=60,
+            entidad_acreedora="Otro Banco",
+            saldo_insoluto=Decimal("250000000"),
+        )
+    )
+
+    nueva = await service.crear_cotizacion("cliente-1", NACIMIENTO, otra)
+
+    activa = await service.obtener_cotizacion_activa("cliente-1")
+    assert activa == nueva
+    assert activa.datos_credito.entidad_acreedora == "Otro Banco"
+
+
+async def test_obtener_cotizacion_activa_inexistente(service):
     from app.domain import RecursoNoEncontrado
 
     with pytest.raises(RecursoNoEncontrado):
-        await service.obtener_cotizacion("cliente-1", "no-existe")
+        await service.obtener_cotizacion_activa("cliente-1")
+
+
+async def test_la_sesion_lleva_la_fecha_de_nacimiento_del_registro(service):
+    _, sesion = await service.registrar(DATOS)
+
+    claims = service._sessions.verificar(sesion.access_token)
+
+    assert claims.fecha_nacimiento == DATOS.fecha_nacimiento
+
+
+async def test_la_sesion_de_inicio_de_sesion_lleva_la_fecha_que_guarda_core(service):
+    await service.registrar(DATOS)
+
+    sesion = await service.iniciar_sesion(DATOS.email, DATOS.password)
+
+    assert service._sessions.verificar(sesion.access_token).fecha_nacimiento == date(1990, 1, 1)
 
 
 def test_cuenta_desde_core_mapea_campos():
@@ -372,6 +439,7 @@ def test_cuenta_desde_core_mapea_campos():
         email="a@b.com",
         estado="ACTIVO",
         telefono="+571234567",
+        fecha_nacimiento=date(1990, 1, 1),
     )
     cuenta = Cuenta.desde_core(core)
     assert cuenta.cliente_id == "c1"

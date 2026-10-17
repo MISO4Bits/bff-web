@@ -45,6 +45,7 @@ async def test_registro_atraviesa_identity_y_core(http_client):
                 "email": REGISTRO_VALIDO["email"],
                 "estado": "ACTIVO",
                 "telefono": "+573001234567",
+                "fechaNacimiento": "1991-05-20",
             },
         )
     )
