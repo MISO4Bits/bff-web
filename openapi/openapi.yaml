@@ -986,8 +986,8 @@ components:
             saldoInsoluto: 238500000
           origenDatos: DECLARADO
           oferta:
-            primaMensual: 96500
-            primaBaseMensual: 112000
+            primaMensual: 39734
+            primaBaseMensual: 46746
             sumaAsegurada: 238500000
             coberturaMeses: 180
             moneda: COP
@@ -995,10 +995,10 @@ components:
           perfilRiesgo:
             nivelRiesgo: BAJO
             factores:
-              - descripcion: Historial de pagos al día en los últimos 24 meses
+              - descripcion: Historial de pagos excelente
                 efecto: POSITIVO
-                pesoRelativo: 0.4
-              - descripcion: Actividad física regular
+                pesoRelativo: 0.1
+              - descripcion: Endeudamiento bajo
                 efecto: POSITIVO
                 pesoRelativo: 0.2
           vigenciaCotizacion:
