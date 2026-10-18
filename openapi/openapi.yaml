@@ -891,7 +891,7 @@ components:
     Oferta:
       type: object
       additionalProperties: false
-      required: [primaMensual, primaBaseMensual, sumaAsegurada, coberturaMeses, moneda, personalizado]
+      required: [primaMensual, primaBaseMensual, sumaAsegurada, coberturaMeses, moneda, personalizado, desglose]
       properties:
         primaMensual: { type: number }
         primaBaseMensual: { type: number }
@@ -902,6 +902,34 @@ components:
         fuentesNoDisponibles:
           type: array
           items: { type: string }
+        desglose: { $ref: '#/components/schemas/Desglose' }
+
+    CoberturaPrecio:
+      type: object
+      additionalProperties: false
+      required: [codigo, obligatoria, sumaAsegurada, primaNeta, iva, primaTotal]
+      properties:
+        codigo: { type: string, enum: [VIDA, HOGAR] }
+        obligatoria: { type: boolean, description: true para VIDA, false para HOGAR. }
+        sumaAsegurada:
+          type: number
+          description: "VIDA: saldo insoluto. HOGAR: min(240.000.000, valorCredito)."
+        primaNeta: { type: number, description: Prima mensual sin IVA. }
+        iva: { type: number, description: IVA mensual. 0 en VIDA; 19 % de primaNeta en HOGAR. }
+        primaTotal: { type: number, description: Prima mensual con IVA (primaNeta + iva). }
+
+    Desglose:
+      type: object
+      additionalProperties: false
+      required: [coberturas]
+      description: |
+        Precio de cada cobertura. No trae totales: el servicio no guarda la selección del
+        cliente, así que el front suma los `primaNeta`, `iva` y `primaTotal` de las coberturas
+        que el cliente elija. HOGAR es opcional y no viene marcada por defecto.
+      properties:
+        coberturas:
+          type: array
+          items: { $ref: '#/components/schemas/CoberturaPrecio' }
 
     Vigencia:
       type: object
@@ -992,6 +1020,20 @@ components:
             coberturaMeses: 180
             moneda: COP
             personalizado: true
+            desglose:
+              coberturas:
+                - codigo: VIDA
+                  obligatoria: true
+                  sumaAsegurada: 238500000
+                  primaNeta: 39734
+                  iva: 0
+                  primaTotal: 39734
+                - codigo: HOGAR
+                  obligatoria: false
+                  sumaAsegurada: 240000000
+                  primaNeta: 23760
+                  iva: 4514
+                  primaTotal: 28274
           perfilRiesgo:
             nivelRiesgo: BAJO
             factores:

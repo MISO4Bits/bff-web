@@ -226,6 +226,11 @@ async def test_journey_cotizacion(cliente_autenticado):
     assert cuerpo["origenDatos"] == "DECLARADO"
     assert cuerpo["datosCredito"]["entidadAcreedora"] == "Banco Solventa"
     assert cuerpo["oferta"]["primaMensual"] > 0
+    vida, hogar = cuerpo["oferta"]["desglose"]["coberturas"]
+    assert (vida["codigo"], vida["iva"]) == ("VIDA", 0)
+    assert vida["primaTotal"] == cuerpo["oferta"]["primaMensual"]
+    assert (hogar["codigo"], hogar["obligatoria"]) == ("HOGAR", False)
+    assert hogar["primaTotal"] == hogar["primaNeta"] + hogar["iva"]
 
     activa = await client.get("/v1/cotizaciones/actual", headers=headers)
     assert activa.status_code == 200

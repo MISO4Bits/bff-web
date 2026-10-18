@@ -14,9 +14,11 @@ import httpx
 
 from app.domain import (
     BffError,
+    CoberturaPrecio,
     Cotizacion,
     CotizacionInput,
     DatosCreditoInput,
+    Desglose,
     FactorRiesgo,
     Oferta,
     PerfilRiesgo,
@@ -108,6 +110,19 @@ def _a_cotizacion(data: dict) -> Cotizacion:
             cobertura_meses=oferta["coberturaMeses"],
             moneda=oferta["moneda"],
             personalizado=oferta["personalizado"],
+            desglose=Desglose(
+                coberturas=tuple(
+                    CoberturaPrecio(
+                        codigo=c["codigo"],
+                        obligatoria=c["obligatoria"],
+                        suma_asegurada=float(Decimal(str(c["sumaAsegurada"]))),
+                        prima_neta=float(Decimal(str(c["primaNeta"]))),
+                        iva=float(Decimal(str(c["iva"]))),
+                        prima_total=float(Decimal(str(c["primaTotal"]))),
+                    )
+                    for c in oferta["desglose"]["coberturas"]
+                )
+            ),
             fuentes_no_disponibles=tuple(oferta.get("fuentesNoDisponibles", [])),
         ),
         perfil_riesgo=(
