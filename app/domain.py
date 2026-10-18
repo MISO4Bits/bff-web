@@ -166,6 +166,23 @@ class PerfilRiesgo:
 
 
 @dataclass(frozen=True)
+class CoberturaPrecio:
+    """Precio mensual de una cobertura, tal como lo calcula svc-cotizacion."""
+
+    codigo: str  # VIDA | HOGAR
+    obligatoria: bool
+    suma_asegurada: float
+    prima_neta: float
+    iva: float
+    prima_total: float
+
+
+@dataclass(frozen=True)
+class Desglose:
+    coberturas: tuple[CoberturaPrecio, ...]
+
+
+@dataclass(frozen=True)
 class Oferta:
     prima_mensual: float
     prima_base_mensual: float
@@ -173,6 +190,7 @@ class Oferta:
     cobertura_meses: int
     moneda: str
     personalizado: bool
+    desglose: Desglose
     fuentes_no_disponibles: tuple[str, ...] = ()
 
 

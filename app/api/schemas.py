@@ -138,6 +138,19 @@ class PerfilRiesgoOut(_Model):
     factores: list[FactorRiesgoOut]
 
 
+class CoberturaPrecioOut(_Model):
+    codigo: Literal["VIDA", "HOGAR"]
+    obligatoria: bool
+    suma_asegurada: float
+    prima_neta: float
+    iva: float
+    prima_total: float
+
+
+class DesgloseOut(_Model):
+    coberturas: list[CoberturaPrecioOut]
+
+
 class OfertaOut(_Model):
     prima_mensual: float
     prima_base_mensual: float
@@ -146,6 +159,7 @@ class OfertaOut(_Model):
     moneda: Literal["COP"]
     personalizado: bool
     fuentes_no_disponibles: list[str] = Field(default_factory=list)
+    desglose: DesgloseOut
 
 
 class VigenciaOut(_Model):

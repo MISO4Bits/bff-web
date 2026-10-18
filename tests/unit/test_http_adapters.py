@@ -78,6 +78,28 @@ def _cotizacion() -> CotizacionClientAdapter:
     return CotizacionClientAdapter(http)
 
 
+DESGLOSE_JSON = {
+    "coberturas": [
+        {
+            "codigo": "VIDA",
+            "obligatoria": True,
+            "sumaAsegurada": 100000000.0,
+            "primaNeta": 45000.0,
+            "iva": 0,
+            "primaTotal": 45000.0,
+        },
+        {
+            "codigo": "HOGAR",
+            "obligatoria": False,
+            "sumaAsegurada": 100000000.0,
+            "primaNeta": 9900.0,
+            "iva": 1881.0,
+            "primaTotal": 11781.0,
+        },
+    ]
+}
+
+
 def _cotizacion_json(**overrides) -> dict:
     base = {
         "estado": "VIGENTE",
@@ -96,6 +118,7 @@ def _cotizacion_json(**overrides) -> dict:
             "coberturaMeses": 120,
             "moneda": "COP",
             "personalizado": False,
+            "desglose": DESGLOSE_JSON,
             "fuentesNoDisponibles": ["perfilamiento"],
         },
         "vigenciaCotizacion": {
@@ -487,6 +510,19 @@ async def test_cotizacion_crear_envia_edad_cliente_id_y_decimales_como_texto():
     try:
         cotizacion = await adapter.crear_cotizacion("cliente-1", 35, ENTRADA_COTIZACION)
         assert cotizacion.oferta.prima_mensual == 45000.0
+        vida, hogar = cotizacion.oferta.desglose.coberturas
+        assert (vida.codigo, vida.obligatoria, vida.iva, vida.prima_total) == (
+            "VIDA",
+            True,
+            0.0,
+            45000.0,
+        )
+        assert (hogar.codigo, hogar.obligatoria, hogar.suma_asegurada) == (
+            "HOGAR",
+            False,
+            100000000.0,
+        )
+        assert (hogar.prima_neta, hogar.iva, hogar.prima_total) == (9900.0, 1881.0, 11781.0)
         assert cotizacion.perfil_riesgo is None
         assert cotizacion.origen_datos == "DECLARADO"
         assert cotizacion.datos_credito.entidad_acreedora == "Banco Solventa"
@@ -517,6 +553,7 @@ async def test_cotizacion_crear_con_perfil_riesgo():
             "coberturaMeses": 120,
             "moneda": "COP",
             "personalizado": True,
+            "desglose": DESGLOSE_JSON,
             "fuentesNoDisponibles": [],
         },
         perfilRiesgo={

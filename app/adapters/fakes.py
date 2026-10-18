@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.domain import (
     ESTADO_DISPONIBLE,
     MENSAJE_ENLACE_INVALIDO,
     ClienteCore,
+    CoberturaPrecio,
     Conflicto,
     ConsentimientoVista,
     Cotizacion,
     CotizacionInput,
     CreditosReportados,
+    DatosCreditoInput,
+    Desglose,
     DocumentoLegal,
     EntidadFinanciera,
     HipotecaReportada,
@@ -177,10 +180,29 @@ class FakeCotizacion:
 
     _TASA_MENSUAL = Decimal("0.0005")
     _VIGENCIA = timedelta(days=30)
+    _HOGAR_TOPE = Decimal("240000000")
+    _HOGAR_TASA_POR_MIL = Decimal("0.099")
+    _IVA = Decimal("0.19")
 
     def __init__(self) -> None:
         self._activas: dict[str, Cotizacion] = {}
         self.ultima_edad: int | None = None
+
+    @classmethod
+    def _desglose(cls, datos: DatosCreditoInput, prima_vida: float) -> Desglose:
+        suma_hogar = min(cls._HOGAR_TOPE, datos.valor_credito)
+        neta = (suma_hogar * cls._HOGAR_TASA_POR_MIL / 1000).quantize(Decimal("1"), ROUND_HALF_UP)
+        iva = (neta * cls._IVA).quantize(Decimal("1"), ROUND_HALF_UP)
+        return Desglose(
+            coberturas=(
+                CoberturaPrecio(
+                    "VIDA", True, float(datos.saldo_insoluto), prima_vida, 0, prima_vida
+                ),
+                CoberturaPrecio(
+                    "HOGAR", False, float(suma_hogar), float(neta), float(iva), float(neta + iva)
+                ),
+            )
+        )
 
     async def crear_cotizacion(
         self, cliente_id: str, edad: int, entrada: CotizacionInput
@@ -201,6 +223,7 @@ class FakeCotizacion:
                 cobertura_meses=entrada.datos_credito.plazo_restante_meses,
                 moneda="COP",
                 personalizado=False,
+                desglose=self._desglose(entrada.datos_credito, prima),
                 fuentes_no_disponibles=("perfilamiento",),
             ),
             vigencia_cotizacion=Vigencia(desde=ahora, hasta=ahora + self._VIGENCIA),
