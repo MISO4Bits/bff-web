@@ -87,6 +87,12 @@ async def test_respuestas_cumplen_el_contrato(client, app, openapi_spec):
     assert activa.status_code == 200
     _validar(openapi_spec, "Cotizacion", activa.json())
 
+    declinada = await client.delete("/v1/cotizaciones/actual", headers=headers)
+    assert declinada.status_code == 204
+    sin_cotizacion = await client.get("/v1/cotizaciones/actual", headers=headers)
+    assert sin_cotizacion.status_code == 404
+    _validar(openapi_spec, "Problema", sin_cotizacion.json())
+
     disponibilidad = await client.get(
         "/v1/registro/disponibilidad", params={"correo": "otro@example.com"}
     )
