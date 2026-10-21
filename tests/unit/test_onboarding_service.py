@@ -413,6 +413,24 @@ async def test_obtener_cotizacion_activa_inexistente(service):
         await service.obtener_cotizacion_activa("cliente-1")
 
 
+async def test_eliminar_cotizacion_activa_deja_al_cliente_sin_cotizacion(service):
+    from app.domain import RecursoNoEncontrado
+
+    await service.crear_cotizacion("cliente-1", NACIMIENTO, ENTRADA_COTIZACION)
+
+    await service.eliminar_cotizacion_activa("cliente-1")
+
+    with pytest.raises(RecursoNoEncontrado):
+        await service.obtener_cotizacion_activa("cliente-1")
+
+
+async def test_eliminar_cotizacion_activa_inexistente(service):
+    from app.domain import RecursoNoEncontrado
+
+    with pytest.raises(RecursoNoEncontrado):
+        await service.eliminar_cotizacion_activa("cliente-1")
+
+
 async def test_la_sesion_lleva_la_fecha_de_nacimiento_del_registro(service):
     _, sesion = await service.registrar(DATOS)
 

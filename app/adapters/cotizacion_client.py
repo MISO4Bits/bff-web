@@ -2,6 +2,7 @@
 
 POST /v1/cotizaciones        crea la cotización y la deja como la activa del cliente
 GET  /v1/cotizaciones/actual la cotización activa del cliente
+DELETE /v1/cotizaciones/actual elimina la cotización activa del cliente
 """
 
 from __future__ import annotations
@@ -72,6 +73,16 @@ class CotizacionClientAdapter:
             raise RecursoNoEncontrado("El cliente no tiene una cotización activa")
         _asegurar_ok(resp)
         return _a_cotizacion(resp.json())
+
+    async def eliminar_cotizacion_activa(self, cliente_id: str) -> None:
+        resp = await self._http.request(
+            "DELETE", "/v1/cotizaciones/actual", headers={"X-Cliente-Id": cliente_id}
+        )
+        if resp.status_code == 404:
+            logger.info("el cliente no tiene cotización activa que eliminar")
+            raise RecursoNoEncontrado("El cliente no tiene una cotización activa")
+        _asegurar_ok(resp, esperado=204)
+        logger.info("cotización activa eliminada")
 
 
 def _problema(resp: httpx.Response) -> tuple[str, list[dict[str, str]] | None]:

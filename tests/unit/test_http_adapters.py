@@ -611,6 +611,38 @@ async def test_cotizacion_activa_ok_y_404():
 
 
 @respx.mock
+async def test_eliminar_cotizacion_activa_204_y_404():
+    ruta = respx.delete(f"{COTIZACION}/v1/cotizaciones/actual").mock(
+        return_value=httpx.Response(204)
+    )
+    adapter = _cotizacion()
+    try:
+        await adapter.eliminar_cotizacion_activa("cliente-1")
+        assert ruta.calls.last.request.headers["x-cliente-id"] == "cliente-1"
+
+        respx.delete(f"{COTIZACION}/v1/cotizaciones/actual").mock(
+            return_value=httpx.Response(404, json={})
+        )
+        with pytest.raises(RecursoNoEncontrado):
+            await adapter.eliminar_cotizacion_activa("cliente-1")
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
+async def test_eliminar_cotizacion_error_5xx():
+    respx.delete(f"{COTIZACION}/v1/cotizaciones/actual").mock(
+        return_value=httpx.Response(500, json={})
+    )
+    adapter = _cotizacion()
+    try:
+        with pytest.raises(BffError):
+            await adapter.eliminar_cotizacion_activa("cliente-1")
+    finally:
+        await adapter.aclose()
+
+
+@respx.mock
 async def test_cotizacion_error_5xx():
     respx.get(f"{COTIZACION}/v1/cotizaciones/actual").mock(
         return_value=httpx.Response(500, json={})

@@ -436,6 +436,22 @@ paths:
               schema: { $ref: '#/components/schemas/Cotizacion' }
         '401': { $ref: '#/components/responses/NoAutorizado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+    delete:
+      operationId: eliminarCotizacionActiva
+      tags: [Cotización]
+      summary: Elimina la cotización activa del cliente (declinar las condiciones)
+      description: |
+        El cliente declinó las condiciones: se borra su cotización activa y vuelve al estado
+        de cero cotizaciones (`GET /v1/cotizaciones/actual` responde `404`). No se conserva
+        historial. Si el cliente no tiene cotización activa responde `404`.
+
+        La identidad sale de la sesión: el cliente solo puede eliminar su propia cotización.
+      responses:
+        '204':
+          description: Cotización eliminada.
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
 
 components:
 

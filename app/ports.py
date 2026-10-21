@@ -74,6 +74,8 @@ class CotizacionPort(Protocol):
 
     async def obtener_cotizacion_activa(self, cliente_id: str) -> Cotizacion: ...
 
+    async def eliminar_cotizacion_activa(self, cliente_id: str) -> None: ...
+
 
 @runtime_checkable
 class DocumentosLegalesPort(Protocol):

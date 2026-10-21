@@ -254,6 +254,29 @@ async def test_una_cotizacion_nueva_reemplaza_a_la_activa(cliente_autenticado):
     assert activa["datosCredito"]["entidadAcreedora"] == "Otro Banco"
 
 
+async def test_declinar_elimina_la_cotizacion_activa(cliente_autenticado):
+    client, headers = cliente_autenticado
+    await client.post("/v1/cotizaciones", headers=headers, json=SOLICITUD_COTIZACION)
+
+    resp = await client.delete("/v1/cotizaciones/actual", headers=headers)
+
+    assert resp.status_code == 204
+    assert resp.content == b""
+    assert (await client.get("/v1/cotizaciones/actual", headers=headers)).status_code == 404
+
+
+async def test_declinar_sin_cotizacion_devuelve_404(cliente_autenticado):
+    client, headers = cliente_autenticado
+    resp = await client.delete("/v1/cotizaciones/actual", headers=headers)
+    assert resp.status_code == 404
+    assert resp.headers["content-type"].startswith("application/problem+json")
+
+
+async def test_declinar_sin_token_devuelve_401(client):
+    resp = await client.delete("/v1/cotizaciones/actual")
+    assert resp.status_code == 401
+
+
 async def test_la_solicitud_no_acepta_edad_ni_cuestionario(cliente_autenticado):
     client, headers = cliente_autenticado
     for extra in ({"edad": 35}, {"cuestionarioHabitos": {"consumeTabaco": False}}):
