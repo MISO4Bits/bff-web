@@ -168,3 +168,38 @@ async def test_creditos_hipotecarios_cumplen_el_contrato(cliente_autenticado, op
 
     assert resp.status_code == 200
     _validar(openapi_spec, "CreditosHipotecarios", resp.json())
+
+
+async def test_evidencias_cumplen_el_contrato(cliente_autenticado, app, openapi_spec):
+    from app.adapters.fakes import FakeEvidencias
+    from app.services import EvidenciasIdentidadService
+
+    client, headers = cliente_autenticado
+    foto = {"imagen": ("foto.jpg", b"\xff\xd8\xff" + b"x" * 100, "image/jpeg")}
+
+    aceptada = await client.post(
+        "/v1/cuenta/evidencias-identidad",
+        headers=headers,
+        data={"tipo": "cedula_frente"},
+        files=foto,
+    )
+    assert aceptada.status_code == 201
+    _validar(openapi_spec, "EvidenciaSubida", aceptada.json())
+
+    app.state.evidencias = EvidenciasIdentidadService(
+        FakeEvidencias(("NO_ES_CEDULA",)), max_bytes=3_000_000
+    )
+    rechazada = await client.post(
+        "/v1/cuenta/evidencias-identidad",
+        headers=headers,
+        data={"tipo": "cedula_reverso"},
+        files=foto,
+    )
+    assert rechazada.status_code == 200
+    _validar(openapi_spec, "EvidenciaSubida", rechazada.json())
+
+    estado = await client.get("/v1/cuenta/evidencias-identidad", headers=headers)
+    assert estado.status_code == 200
+    assert len(estado.json()) == 3
+    for item in estado.json():
+        _validar(openapi_spec, "EstadoEvidencia", item)

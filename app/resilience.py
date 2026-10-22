@@ -118,7 +118,12 @@ class ResilientHttpClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def request(self, method: str, url: str, **kwargs) -> httpx.Response:
+    async def request(
+        self, method: str, url: str, *, reintentos: int | None = None, **kwargs
+    ) -> httpx.Response:
+        """``reintentos=0`` para lo que no es seguro repetir (p. ej. subir una foto: cada
+        envío cuenta como un intento en el servidor)."""
+
         async def _guarded() -> httpx.Response:
             response = await self._client.request(method, url, **kwargs)
             if response.status_code in _TRANSIENT_STATUS:
@@ -139,7 +144,7 @@ class ResilientHttpClient:
 
         retryer = AsyncRetrying(
             reraise=True,
-            stop=stop_after_attempt(self._retries + 1),
+            stop=stop_after_attempt((self._retries if reintentos is None else reintentos) + 1),
             wait=wait_exponential_jitter(initial=0.05, max=0.5),
             retry=retry_if_exception_type(_Transient),
         )

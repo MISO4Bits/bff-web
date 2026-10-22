@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -20,12 +21,14 @@ from app.domain import (
     Desglose,
     DocumentoLegal,
     EntidadFinanciera,
+    EstadoEvidenciaTipo,
     HipotecaReportada,
     NoAutorizado,
     Oferta,
     RecursoNoEncontrado,
     RegistroInput,
     ReglaNegocio,
+    ResultadoEvidencia,
     Vigencia,
 )
 
@@ -170,6 +173,62 @@ class FakeCoreIdentity:
             vigente=False,
             actualizado_en=datetime.now(UTC),
         )
+
+
+class FakeEvidencias:
+    """Evidencias en memoria. ``veredictos`` se recorre en rotación, una entrada por foto:
+    ``ACEPTADA``, ``REVISION_MANUAL`` o un motivo de rechazo (``BORROSA``, ...)."""
+
+    _TIPOS = ("cedula_frente", "cedula_reverso", "selfie")
+
+    def __init__(self, veredictos=("ACEPTADA",), intentos_max: int = 3) -> None:
+        self._veredictos = itertools.cycle(tuple(veredictos))
+        self._intentos_max = intentos_max
+        self._vigentes: dict[tuple[str, str], EstadoEvidenciaTipo] = {}
+        self._rechazos: dict[tuple[str, str], int] = {}
+
+    async def subir(
+        self, cliente_id: str, tipo: str, imagen: bytes, nombre: str, content_type: str
+    ) -> ResultadoEvidencia:
+        clave = (cliente_id, tipo)
+        veredicto = next(self._veredictos)
+        if veredicto not in ("ACEPTADA", "REVISION_MANUAL"):
+            rechazos = self._rechazos.get(clave, 0) + 1
+            self._rechazos[clave] = rechazos
+            if rechazos < self._intentos_max:
+                return ResultadoEvidencia(
+                    tipo=tipo,
+                    estado="REINTENTAR",
+                    motivo=veredicto,
+                    intentos_restantes=self._intentos_max - rechazos,
+                )
+            veredicto = "REVISION_MANUAL"  # tercer rechazo: lo revisa una persona
+        self._rechazos.pop(clave, None)
+        evidencia_id = str(uuid.uuid4())
+        self._vigentes[clave] = EstadoEvidenciaTipo(
+            tipo=tipo,
+            estado=veredicto,
+            intentos_restantes=self._intentos_max,
+            evidencia_id=evidencia_id,
+            creada_en=datetime.now(UTC),
+        )
+        return ResultadoEvidencia(
+            tipo=tipo,
+            estado=veredicto,
+            evidencia_id=evidencia_id,
+            intentos_restantes=self._intentos_max,
+        )
+
+    async def estado(self, cliente_id: str) -> list[EstadoEvidenciaTipo]:
+        return [
+            self._vigentes.get((cliente_id, tipo))
+            or EstadoEvidenciaTipo(
+                tipo=tipo,
+                estado="PENDIENTE",
+                intentos_restantes=self._intentos_max - self._rechazos.get((cliente_id, tipo), 0),
+            )
+            for tipo in self._TIPOS
+        ]
 
 
 class FakeCotizacion:
