@@ -35,7 +35,7 @@ async def test_registro_atraviesa_identity_y_core(http_client):
     respx.post(f"{IDP}/v1/accounts:signUp").mock(
         return_value=httpx.Response(200, json={"localId": "sub-9", "idToken": "t"})
     )
-    respx.post(f"{CORE}/clientes").mock(
+    respx.post(f"{CORE}/v1/clientes").mock(
         return_value=httpx.Response(
             201,
             json={
@@ -61,7 +61,7 @@ async def test_registro_compensa_si_core_devuelve_409(http_client):
     respx.post(f"{IDP}/v1/accounts:signUp").mock(
         return_value=httpx.Response(200, json={"localId": "sub-9"})
     )
-    respx.post(f"{CORE}/clientes").mock(
+    respx.post(f"{CORE}/v1/clientes").mock(
         return_value=httpx.Response(409, json={"detail": "documento repetido"})
     )
     borrado = respx.post(f"{IDP}/v1/accounts:delete").mock(
@@ -79,7 +79,7 @@ async def test_registro_devuelve_503_si_core_no_responde(http_client):
     respx.post(f"{IDP}/v1/accounts:signUp").mock(
         return_value=httpx.Response(200, json={"localId": "sub-9"})
     )
-    respx.post(f"{CORE}/clientes").mock(return_value=httpx.Response(503))
+    respx.post(f"{CORE}/v1/clientes").mock(return_value=httpx.Response(503))
     respx.post(f"{IDP}/v1/accounts:delete").mock(return_value=httpx.Response(200, json={}))
 
     resp = await http_client.post("/v1/registro", json=REGISTRO_VALIDO)

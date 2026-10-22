@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # llamar a Productos en cada pantalla (y poder responder si Productos cae).
     entidades_cache_segundos: int = 3600
 
+    # Evidencias de identidad (BITS-275): una foto por request, ya comprimida por el cliente.
+    evidencia_max_bytes: int = 3 * 1024 * 1024
+    # Subir incluye el análisis en svc-core (hasta ~2,5 s): no cabe en http_timeout_seconds.
+    evidencias_timeout_seconds: float = 5.0
+
     # Patrones de resiliencia hacia dependencias (§6.1: timeout duro 700 ms)
     http_timeout_seconds: float = 0.7
     http_retries: int = 2

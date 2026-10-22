@@ -185,7 +185,7 @@ async def test_identity_eliminar_y_error_5xx():
 
 @respx.mock
 async def test_core_registrar_cliente_ok_y_conflicto():
-    ruta = respx.post(f"{CORE}/clientes")
+    ruta = respx.post(f"{CORE}/v1/clientes")
     ruta.mock(
         return_value=httpx.Response(
             201,
@@ -225,7 +225,7 @@ async def test_core_registrar_cliente_ok_y_conflicto():
 )
 @respx.mock
 async def test_core_conflicto_indica_el_campo_repetido(cuerpo, campo):
-    respx.post(f"{CORE}/clientes").mock(return_value=httpx.Response(409, json=cuerpo))
+    respx.post(f"{CORE}/v1/clientes").mock(return_value=httpx.Response(409, json=cuerpo))
     adapter = _core()
     try:
         with pytest.raises(Conflicto) as exc:
@@ -237,7 +237,7 @@ async def test_core_conflicto_indica_el_campo_repetido(cuerpo, campo):
 
 @respx.mock
 async def test_core_registrar_cliente_reenvia_la_idempotency_key():
-    ruta = respx.post(f"{CORE}/clientes").mock(
+    ruta = respx.post(f"{CORE}/v1/clientes").mock(
         return_value=httpx.Response(
             201,
             json={
@@ -263,7 +263,7 @@ async def test_core_registrar_cliente_reenvia_la_idempotency_key():
 
 @respx.mock
 async def test_core_obtener_cliente_404():
-    respx.get(f"{CORE}/clientes/c1").mock(return_value=httpx.Response(404, json={}))
+    respx.get(f"{CORE}/v1/clientes/c1").mock(return_value=httpx.Response(404, json={}))
     adapter = _core()
     try:
         with pytest.raises(RecursoNoEncontrado):
@@ -276,37 +276,37 @@ async def test_core_obtener_cliente_404():
 async def test_core_mapea_errores_de_negocio_y_no_esperados():
     adapter = _core()
     try:
-        respx.post(f"{CORE}/clientes").mock(
+        respx.post(f"{CORE}/v1/clientes").mock(
             return_value=httpx.Response(422, json={"detail": "regla"})
         )
         with pytest.raises(SolicitudInvalida):
             await adapter.registrar_cliente("sub-1", DATOS)
 
-        respx.post(f"{CORE}/clientes/c1/consentimientos").mock(
+        respx.post(f"{CORE}/v1/clientes/c1/consentimientos").mock(
             return_value=httpx.Response(404, json={})
         )
         with pytest.raises(RecursoNoEncontrado):
             await adapter.otorgar_consentimiento("c1", "OPEN_DATA", "v1", "WEB")
 
-        respx.post(f"{CORE}/clientes/c2/consentimientos").mock(
+        respx.post(f"{CORE}/v1/clientes/c2/consentimientos").mock(
             return_value=httpx.Response(400, json={"detail": "mal"})
         )
         with pytest.raises(SolicitudInvalida):
             await adapter.otorgar_consentimiento("c2", "OPEN_DATA", "v1", "WEB")
 
-        respx.get(f"{CORE}/clientes/c9/consentimientos").mock(
+        respx.get(f"{CORE}/v1/clientes/c9/consentimientos").mock(
             return_value=httpx.Response(404, json={})
         )
         with pytest.raises(RecursoNoEncontrado):
             await adapter.listar_consentimientos("c9")
 
-        respx.delete(f"{CORE}/clientes/c9/consentimientos/OPEN_DATA").mock(
+        respx.delete(f"{CORE}/v1/clientes/c9/consentimientos/OPEN_DATA").mock(
             return_value=httpx.Response(404, json={})
         )
         with pytest.raises(RecursoNoEncontrado):
             await adapter.revocar_consentimiento("c9", "OPEN_DATA")
 
-        respx.get(f"{CORE}/clientes/cX").mock(return_value=httpx.Response(500, json={}))
+        respx.get(f"{CORE}/v1/clientes/cX").mock(return_value=httpx.Response(500, json={}))
         with pytest.raises(BffError):
             await adapter.obtener_cliente("cX")
     finally:
@@ -389,12 +389,12 @@ async def test_identity_confirmar_correo_falla_del_proveedor():
 
 @respx.mock
 async def test_core_existe_cliente_y_confirmar_cliente():
-    respx.get(f"{CORE}/clientes/disponibilidad").mock(
+    respx.get(f"{CORE}/v1/clientes/disponibilidad").mock(
         return_value=httpx.Response(
             200, json={"correoDisponible": True, "documentoDisponible": None}
         )
     )
-    respx.post(f"{CORE}/clientes/c1/confirmacion").mock(
+    respx.post(f"{CORE}/v1/clientes/c1/confirmacion").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -409,7 +409,9 @@ async def test_core_existe_cliente_y_confirmar_cliente():
             },
         )
     )
-    respx.post(f"{CORE}/clientes/c9/confirmacion").mock(return_value=httpx.Response(404, json={}))
+    respx.post(f"{CORE}/v1/clientes/c9/confirmacion").mock(
+        return_value=httpx.Response(404, json={})
+    )
     adapter = _core()
     try:
         disponibilidad = await adapter.existe_cliente("libre@example.com", None, None)
@@ -439,18 +441,18 @@ async def test_identity_registrar_400_no_email_exists():
 
 @respx.mock
 async def test_core_consentimientos_ciclo():
-    respx.post(f"{CORE}/clientes/c1/consentimientos").mock(
+    respx.post(f"{CORE}/v1/clientes/c1/consentimientos").mock(
         return_value=httpx.Response(
             201, json={"scope": "OPEN_FINANCE", "estado": "OTORGADO", "version": 1}
         )
     )
-    respx.get(f"{CORE}/clientes/c1/consentimientos").mock(
+    respx.get(f"{CORE}/v1/clientes/c1/consentimientos").mock(
         return_value=httpx.Response(
             200,
             json=[{"scope": "OPEN_FINANCE", "estado": "OTORGADO", "version": 1}],
         )
     )
-    respx.delete(f"{CORE}/clientes/c1/consentimientos/OPEN_FINANCE").mock(
+    respx.delete(f"{CORE}/v1/clientes/c1/consentimientos/OPEN_FINANCE").mock(
         return_value=httpx.Response(204)
     )
     adapter = _core()
@@ -465,7 +467,7 @@ async def test_core_consentimientos_ciclo():
 
 @respx.mock
 async def test_core_buscar_por_identidad():
-    respx.get(f"{CORE}/clientes").mock(
+    respx.get(f"{CORE}/v1/clientes").mock(
         return_value=httpx.Response(
             200,
             json={

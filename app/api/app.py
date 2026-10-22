@@ -10,10 +10,16 @@ from fastapi.responses import FileResponse
 from app.adapters.factory import build_dependencias
 from app.api.cors import configure_cors
 from app.api.errors import install_error_handlers
+from app.api.limites import install_limite_de_subidas
 from app.api.routes import router
 from app.config import Settings, get_settings
 from app.logging_utils import SinRuidoDeHealthCheck
-from app.services import CreditosHipotecariosService, DocumentosLegalesService, OnboardingService
+from app.services import (
+    CreditosHipotecariosService,
+    DocumentosLegalesService,
+    EvidenciasIdentidadService,
+    OnboardingService,
+)
 from app.telemetry import agregar_encabezado_trace_id, setup_telemetry, shutdown_telemetry
 
 SPEC_PATH = Path(__file__).resolve().parents[2] / "openapi" / "openapi.yaml"
@@ -31,6 +37,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         deps.creditos, deps.entidades, cache_segundos=settings.entidades_cache_segundos
     )
 
+    evidencias = EvidenciasIdentidadService(deps.evidencias, max_bytes=settings.evidencia_max_bytes)
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         yield
@@ -45,9 +53,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.service = service
     app.state.documentos_legales = documentos_legales
     app.state.creditos = creditos
+    app.state.evidencias = evidencias
     app.state.sessions = deps.sessions
 
     install_error_handlers(app)
+    install_limite_de_subidas(app, settings.evidencia_max_bytes)
     app.include_router(router)
 
     @app.get("/health", include_in_schema=False)

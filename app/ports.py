@@ -12,7 +12,9 @@ from app.domain import (
     CreditosReportados,
     DocumentoLegal,
     EntidadFinanciera,
+    EstadoEvidenciaTipo,
     RegistroInput,
+    ResultadoEvidencia,
 )
 
 
@@ -96,3 +98,17 @@ class CreditosHipotecariosPort(Protocol):
 @runtime_checkable
 class EntidadesFinancierasPort(Protocol):
     async def listar_entidades(self, mercado: str) -> list[EntidadFinanciera]: ...
+
+
+@runtime_checkable
+class EvidenciasIdentidadPort(Protocol):
+    async def subir(
+        self, cliente_id: str, tipo: str, imagen: bytes, nombre: str, content_type: str
+    ) -> ResultadoEvidencia:
+        """Una foto de identidad; svc-core decide si sirve. Lanza ``RecursoNoEncontrado``
+        (cliente), ``SolicitudInvalida`` (no es una imagen) o ``ImagenMuyGrande``."""
+        ...
+
+    async def estado(self, cliente_id: str) -> list[EstadoEvidenciaTipo]:
+        """Estado vigente de cada tipo de evidencia (siempre los tres)."""
+        ...

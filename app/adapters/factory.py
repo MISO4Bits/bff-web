@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import httpx
+
 from app.adapters.core_client import CoreClientAdapter
 from app.adapters.cotizacion_client import CotizacionClientAdapter
 from app.adapters.fakes import (
@@ -12,6 +14,7 @@ from app.adapters.fakes import (
     FakeCreditosHipotecarios,
     FakeDocumentosLegales,
     FakeEntidadesFinancieras,
+    FakeEvidencias,
     FakeIdentityProvider,
 )
 from app.adapters.identity_platform import IdentityPlatformAdapter
@@ -24,6 +27,7 @@ from app.ports import (
     CreditosHipotecariosPort,
     DocumentosLegalesPort,
     EntidadesFinancierasPort,
+    EvidenciasIdentidadPort,
     IdentityProviderPort,
 )
 from app.resilience import ResilientHttpClient, build_breaker
@@ -39,6 +43,8 @@ class Dependencias:
     sessions: SessionIssuer
     creditos: CreditosHipotecariosPort
     entidades: EntidadesFinancierasPort
+    # En modo http es el mismo adaptador que ``core``: se cierra una sola vez.
+    evidencias: EvidenciasIdentidadPort
 
     async def aclose(self) -> None:
         # ``entidades`` comparte cliente HTTP con ``documentos_legales`` (los dos son Productos).
@@ -70,6 +76,7 @@ def build_dependencias(settings: Settings) -> Dependencias:
             sessions,
             FakeCreditosHipotecarios(),
             FakeEntidadesFinancieras(),
+            FakeEvidencias(),
         )
 
     if settings.adapters == "http":
@@ -139,14 +146,21 @@ def build_dependencias(settings: Settings) -> Dependencias:
             max_keepalive_connections=settings.http_max_keepalive_connections,
         )
         productos = ProductosClientAdapter(productos_http)
+        core = CoreClientAdapter(
+            core_http,
+            timeout_subida=httpx.Timeout(
+                settings.evidencias_timeout_seconds, pool=settings.http_pool_timeout_seconds
+            ),
+        )
         return Dependencias(
             IdentityPlatformAdapter(identity_http, settings.identity_api_key),
-            CoreClientAdapter(core_http),
+            core,
             CotizacionClientAdapter(cotizacion_http),
             productos,
             sessions,
             PerfilamientoClientAdapter(perfilamiento_http),
             productos,
+            core,
         )
 
     raise ValueError(f"adapters no soportado: {settings.adapters}")

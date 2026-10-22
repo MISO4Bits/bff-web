@@ -267,6 +267,27 @@ class CreditosHipotecarios:
 MENSAJE_ENLACE_INVALIDO = "El enlace de confirmación no es válido, ya se usó o venció"
 
 
+@dataclass(frozen=True)
+class ResultadoEvidencia:
+    """Veredicto de svc-core sobre una foto de identidad. ``evidencia_id`` es ``None`` si hay
+    que reintentar: no se guardó nada."""
+
+    tipo: str
+    estado: str
+    intentos_restantes: int
+    evidencia_id: str | None = None
+    motivo: str | None = None
+
+
+@dataclass(frozen=True)
+class EstadoEvidenciaTipo:
+    tipo: str
+    estado: str  # ACEPTADA | REVISION_MANUAL | PENDIENTE
+    intentos_restantes: int
+    evidencia_id: str | None = None
+    creada_en: datetime | None = None
+
+
 class BffError(Exception):
     status = 500
     title = "Error interno"
@@ -308,6 +329,11 @@ class Conflicto(BffError):
         """Conflicto de registro que indica el campo repetido, sin datos de otra persona."""
         mensaje = cls._MENSAJES[campo]
         return cls(mensaje, errores=[{"campo": campo, "mensaje": mensaje}])
+
+
+class ImagenMuyGrande(BffError):
+    status = 413
+    title = "Imagen demasiado grande"
 
 
 class ReglaNegocio(BffError):
