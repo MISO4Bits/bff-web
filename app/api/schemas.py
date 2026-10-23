@@ -212,7 +212,17 @@ class CreditosHipotecariosOut(_Model):
 
 TipoEvidencia = Literal["cedula_frente", "cedula_reverso", "selfie"]
 EstadoVeredicto = Literal["ACEPTADA", "REINTENTAR", "REVISION_MANUAL"]
-MotivoRechazo = Literal["BORROSA", "OSCURA", "REFLEJO", "RECORTADA", "NO_ES_CEDULA"]
+MotivoRechazo = Literal[
+    "BORROSA",
+    "OSCURA",
+    "REFLEJO",
+    "RECORTADA",
+    "NO_ES_CEDULA",
+    "SIN_ROSTRO",
+    "VARIOS_ROSTROS",
+    "POSIBLE_SUPLANTACION",
+    "NO_COINCIDE_CON_CEDULA",
+]
 
 
 class EvidenciaSubidaOut(_Model):

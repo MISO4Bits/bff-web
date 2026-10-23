@@ -409,6 +409,12 @@ paths:
 
         El resultado nunca incluye el número leído de la imagen.
 
+        **Selfie (`tipo = selfie`).** Se compara con el frente de la cédula ya guardado, así que
+        primero deben estar vigentes **ambas caras** de la cédula; si no, responde `422` y no
+        cuenta como intento. El servidor revisa que haya un solo rostro, que sea una persona real
+        (prueba de vida pasiva) y que coincida con el de la cédula. Si no está seguro, la deja en
+        `REVISION_MANUAL`. Los puntajes no salen en la respuesta.
+
         Cada envío cuenta como un intento: no se reintenta automáticamente ante un fallo de red.
       requestBody:
         required: true
@@ -431,6 +437,11 @@ paths:
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '413':
           description: La imagen supera el máximo permitido.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '422':
+          description: Se subió la selfie sin que ambas caras de la cédula estén vigentes.
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problema' }
@@ -1169,11 +1180,26 @@ components:
       enum: [ACEPTADA, REINTENTAR, REVISION_MANUAL]
     MotivoRechazo:
       type: string
-      enum: [BORROSA, OSCURA, REFLEJO, RECORTADA, NO_ES_CEDULA]
+      enum:
+        - BORROSA
+        - OSCURA
+        - REFLEJO
+        - RECORTADA
+        - NO_ES_CEDULA
+        - SIN_ROSTRO
+        - VARIOS_ROSTROS
+        - POSIBLE_SUPLANTACION
+        - NO_COINCIDE_CON_CEDULA
       description: |
         Qué corregir al repetir la foto. `REFLEJO` incluye demasiada luz en toda la foto,
         `BORROSA` incluye una foto con muy pocos píxeles, y `NO_ES_CEDULA` es que no se
         reconoció una tarjeta con la proporción de una cédula.
+
+        Los cuatro últimos son de la selfie: `SIN_ROSTRO` (no se ve un rostro, o se ve muy
+        pequeño), `VARIOS_ROSTROS` (hay más de una persona), `POSIBLE_SUPLANTACION` (no parece
+        una persona real: foto de una foto o de una pantalla) y `NO_COINCIDE_CON_CEDULA` (el
+        rostro no se parece al de la cédula). Los clientes deben tolerar motivos que no
+        conozcan.
 
     SubirEvidenciaRequest:
       type: object

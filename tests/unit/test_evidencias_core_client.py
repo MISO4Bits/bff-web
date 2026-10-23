@@ -10,6 +10,7 @@ from app.domain import (
     DependenciaNoDisponible,
     ImagenMuyGrande,
     RecursoNoEncontrado,
+    ReglaNegocio,
     SolicitudInvalida,
 )
 from app.resilience import ResilientHttpClient, build_breaker
@@ -100,7 +101,7 @@ async def test_subir_un_rechazo_trae_el_motivo_y_ninguna_evidencia():
         (404, RecursoNoEncontrado),
         (413, ImagenMuyGrande),
         (400, SolicitudInvalida),
-        (422, SolicitudInvalida),
+        (422, ReglaNegocio),
         (500, BffError),
     ],
 )
@@ -200,3 +201,45 @@ async def test_estado_de_un_cliente_inexistente():
             await adapter.estado("c1")
     finally:
         await adapter.aclose()
+
+
+@respx.mock
+async def test_el_422_de_la_selfie_sin_cedula_llega_como_regla_de_negocio_con_su_detalle():
+    respx.post(RUTA).mock(
+        return_value=httpx.Response(
+            422, json={"detail": "Para subir la selfie primero deben estar vigentes ambas caras"}
+        )
+    )
+    adapter = _core()
+    try:
+        with pytest.raises(ReglaNegocio, match="ambas caras"):
+            await _subir(adapter, "selfie")
+    finally:
+        await adapter.aclose()
+
+
+@pytest.mark.parametrize(
+    "motivo",
+    ["SIN_ROSTRO", "VARIOS_ROSTROS", "POSIBLE_SUPLANTACION", "NO_COINCIDE_CON_CEDULA"],
+)
+@respx.mock
+async def test_los_motivos_de_la_selfie_pasan_tal_cual(motivo):
+    respx.post(RUTA).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "tipo": "selfie",
+                "estado": "REINTENTAR",
+                "motivo": motivo,
+                "intentosRestantes": 2,
+                "evidenciaId": None,
+            },
+        )
+    )
+    adapter = _core()
+    try:
+        resultado = await _subir(adapter, "selfie")
+    finally:
+        await adapter.aclose()
+
+    assert (resultado.estado, resultado.motivo) == ("REINTENTAR", motivo)
