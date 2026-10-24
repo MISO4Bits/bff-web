@@ -131,13 +131,13 @@ async def test_obtener_y_documento():
     respx.get(f"{POLIZAS}/p1").mock(return_value=httpx.Response(200, json={"polizaId": "p1"}))
     respx.get(f"{POLIZAS}/p1/documento").mock(
         side_effect=[
-            httpx.Response(200, json={"estado": "LISTO", "url": "http://d"}),
+            httpx.Response(200, json={"estado": "LISTO", "url": "https://d"}),
             httpx.Response(202, json={"estado": "GENERANDO"}),
         ]
     )
 
     assert await _core().obtener("c1", "p1") == {"polizaId": "p1"}
-    assert await _core().documento("c1", "p1") == ({"estado": "LISTO", "url": "http://d"}, True)
+    assert await _core().documento("c1", "p1") == ({"estado": "LISTO", "url": "https://d"}, True)
     assert await _core().documento("c1", "p1") == ({"estado": "GENERANDO"}, False)
 
 

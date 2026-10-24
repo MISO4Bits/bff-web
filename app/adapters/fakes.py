@@ -543,6 +543,6 @@ class FakePolizas:
             return {"estado": "GENERANDO", "url": None, "expiraEn": None}, False
         return {
             "estado": "LISTO",
-            "url": f"http://documentos.local/{poliza['numero']}.pdf",
+            "url": f"https://documentos.local/{poliza['numero']}.pdf",
             "expiraEn": datetime.now(UTC).isoformat(),
         }, True
