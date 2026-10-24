@@ -16,6 +16,7 @@ from app.adapters.fakes import (
     FakeEntidadesFinancieras,
     FakeEvidencias,
     FakeIdentityProvider,
+    FakePolizas,
 )
 from app.adapters.identity_platform import IdentityPlatformAdapter
 from app.adapters.perfilamiento_client import PerfilamientoClientAdapter
@@ -29,6 +30,7 @@ from app.ports import (
     EntidadesFinancierasPort,
     EvidenciasIdentidadPort,
     IdentityProviderPort,
+    PolizasPort,
 )
 from app.resilience import ResilientHttpClient, build_breaker
 from app.security import SessionIssuer
@@ -45,6 +47,7 @@ class Dependencias:
     entidades: EntidadesFinancierasPort
     # En modo http es el mismo adaptador que ``core``: se cierra una sola vez.
     evidencias: EvidenciasIdentidadPort
+    polizas: PolizasPort
 
     async def aclose(self) -> None:
         # ``entidades`` comparte cliente HTTP con ``documentos_legales`` (los dos son Productos).
@@ -77,6 +80,7 @@ def build_dependencias(settings: Settings) -> Dependencias:
             FakeCreditosHipotecarios(),
             FakeEntidadesFinancieras(),
             FakeEvidencias(),
+            FakePolizas(),
         )
 
     if settings.adapters == "http":
@@ -151,6 +155,9 @@ def build_dependencias(settings: Settings) -> Dependencias:
             timeout_subida=httpx.Timeout(
                 settings.evidencias_timeout_seconds, pool=settings.http_pool_timeout_seconds
             ),
+            timeout_polizas=httpx.Timeout(
+                settings.polizas_timeout_seconds, pool=settings.http_pool_timeout_seconds
+            ),
         )
         return Dependencias(
             IdentityPlatformAdapter(identity_http, settings.identity_api_key),
@@ -160,6 +167,7 @@ def build_dependencias(settings: Settings) -> Dependencias:
             sessions,
             PerfilamientoClientAdapter(perfilamiento_http),
             productos,
+            core,
             core,
         )
 

@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 _EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
@@ -14,7 +14,7 @@ _TELEFONO = r"^\+?[0-9]{7,15}$"
 _DOCUMENTO = r"^[0-9A-Za-z-]+$"
 
 Scope = Literal["OPEN_FINANCE", "OPEN_DATA"]
-TipoDocumentoLegal = Literal["terminos", "open-data", "open-finance"]
+TipoDocumentoLegal = Literal["terminos", "open-data", "open-finance", "poliza"]
 PATRON_VERSION = r"^V[1-9][0-9]*$"
 PATRON_IDIOMA = r"^[a-z]{2}-[A-Z]{2}$"
 
@@ -239,3 +239,111 @@ class EstadoEvidenciaOut(_Model):
     evidencia_id: str | None = None
     creada_en: datetime | None = None
     intentos_restantes: int
+
+
+# --- pólizas (BITS-101) ---
+
+CodigoCobertura = Literal["VIDA", "HOGAR"]
+CodigoPendiente = Literal[
+    "CORREO_SIN_CONFIRMAR",
+    "EVIDENCIA_FALTANTE",
+    "EVIDENCIA_EN_REVISION",
+    "CREDITO_NO_VERIFICADO",
+]
+EstadoPoliza = Literal["PENDIENTE", "EMITIDA", "RECHAZADA", "VENCIDA"]
+
+
+class DocumentoAceptadoIn(_Model):
+    tipo: Literal["poliza"]
+    version: str = Field(pattern=PATRON_VERSION, max_length=20)
+
+
+class SolicitarPolizaRequest(_Model):
+    coberturas: list[CodigoCobertura] = Field(min_length=1, max_length=2)
+    cotizacion_creada_en: AwareDatetime
+    documentos_aceptados: list[DocumentoAceptadoIn] = Field(min_length=1, max_length=5)
+
+
+class _Respuesta(BaseModel):
+    """Lo que entrega svc-core: si agrega un campo, el BFF no se cae por no conocerlo."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
+
+
+class CoberturaContratadaOut(_Respuesta):
+    codigo: CodigoCobertura
+    obligatoria: bool
+    suma_asegurada: float
+    prima_neta: float
+    iva: float
+    prima_total: float
+
+
+class DatosCreditoPolizaOut(_Respuesta):
+    valor_credito: float
+    plazo_restante_meses: int
+    entidad_acreedora: str
+    saldo_insoluto: float
+
+
+class VigenciaPolizaOut(_Respuesta):
+    desde: datetime
+    hasta: datetime
+
+
+class DetallePendienteOut(_Respuesta):
+    evidencias: list[TipoEvidencia]
+
+
+class PendienteOut(_Respuesta):
+    codigo: CodigoPendiente
+    tipo: Literal["USUARIO", "AGENTE"]
+    mensaje: str
+    detalle: DetallePendienteOut | None = None
+
+
+class EstadoDocumentoOut(_Respuesta):
+    estado: Literal["NO_DISPONIBLE", "DISPONIBLE"]
+
+
+class DocumentoAceptadoOut(_Respuesta):
+    tipo: str
+    version: str
+    aceptado_en: datetime
+
+
+class MotivoRechazoOut(_Respuesta):
+    codigo: CodigoPendiente
+    mensaje: str
+
+
+class RechazoOut(_Respuesta):
+    motivos: list[MotivoRechazoOut]
+    rechazada_en: datetime
+
+
+class PolizaOut(_Respuesta):
+    poliza_id: str
+    numero: str | None = None
+    estado: EstadoPoliza
+    producto: Literal["VIDA_HIPOTECARIO"]
+    creada_en: datetime
+    emitida_en: datetime | None = None
+    solicitud_vigente_hasta: datetime | None = None
+    vigencia: VigenciaPolizaOut | None = None
+    coberturas: list[CoberturaContratadaOut]
+    prima_total_mensual: float
+    moneda: Literal["COP"]
+    datos_credito: DatosCreditoPolizaOut
+    origen_datos: Literal["CONFIRMADO", "DECLARADO"]
+    cotizacion_creada_en: datetime
+    pendientes: list[PendienteOut]
+    documento: EstadoDocumentoOut
+    documentos_aceptados: list[DocumentoAceptadoOut] = Field(default_factory=list)
+    rechazo: RechazoOut | None = None
+
+
+class DocumentoPolizaOut(_Respuesta):
+    estado: Literal["GENERANDO", "LISTO"]
+    url: str | None = None
+    expira_en: datetime | None = None

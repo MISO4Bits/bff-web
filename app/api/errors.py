@@ -22,6 +22,7 @@ def problema(
     detail: str | None = None,
     instance: str | None = None,
     errores: list[dict] | None = None,
+    codigo: str | None = None,
 ) -> JSONResponse:
     body: dict = {"type": "about:blank", "title": title, "status": status}
     if detail:
@@ -30,6 +31,8 @@ def problema(
         body["instance"] = instance
     if errores:
         body["errores"] = errores
+    if codigo:
+        body["codigo"] = codigo
     return JSONResponse(status_code=status, content=body, media_type=PROBLEM_MEDIA_TYPE)
 
 
@@ -49,6 +52,7 @@ def install_error_handlers(app: FastAPI) -> None:
             detail=exc.detail,
             instance=str(request.url),
             errores=exc.errores,
+            codigo=exc.codigo,
         )
 
     @app.exception_handler(RequestValidationError)

@@ -145,3 +145,35 @@ async def test_si_svc_productos_no_responde_el_bff_devuelve_503(http_client):
     resp = await http_client.get("/v1/documentos-legales", params=PARAMS)
     assert resp.status_code == 503
     assert resp.headers["content-type"].startswith("application/problem+json")
+
+
+async def test_sin_tipo_el_listado_no_incluye_las_condiciones_de_la_poliza(client):
+    respuesta = await client.get("/v1/documentos-legales", params={"mercado": "CO"})
+
+    assert [d["tipo"] for d in respuesta.json()] == ["terminos", "open-data", "open-finance"]
+
+
+async def test_con_tipo_poliza_devuelve_las_condiciones_de_la_poliza(client, openapi_spec):
+    respuesta = await client.get(
+        "/v1/documentos-legales", params={"mercado": "CO", "tipo": "poliza"}
+    )
+
+    assert respuesta.status_code == 200
+    [documento] = respuesta.json()
+    assert (documento["tipo"], documento["version"]) == ("poliza", "V1")
+    assert documento["titulo"] == "Condiciones de tu póliza"
+
+
+async def test_un_tipo_desconocido_en_el_filtro_es_400(client):
+    respuesta = await client.get("/v1/documentos-legales", params={"mercado": "CO", "tipo": "otro"})
+
+    assert respuesta.status_code == 400
+
+
+async def test_se_puede_pedir_una_version_exacta_de_la_poliza(client):
+    respuesta = await client.get(
+        "/v1/documentos-legales/poliza/versiones/V1", params={"mercado": "CO"}
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["tipo"] == "poliza"
