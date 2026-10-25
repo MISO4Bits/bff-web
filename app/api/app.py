@@ -19,6 +19,7 @@ from app.services import (
     DocumentosLegalesService,
     EvidenciasIdentidadService,
     OnboardingService,
+    PolizasService,
 )
 from app.telemetry import agregar_encabezado_trace_id, setup_telemetry, shutdown_telemetry
 
@@ -38,6 +39,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     evidencias = EvidenciasIdentidadService(deps.evidencias, max_bytes=settings.evidencia_max_bytes)
+    polizas = PolizasService(deps.polizas)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -54,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.documentos_legales = documentos_legales
     app.state.creditos = creditos
     app.state.evidencias = evidencias
+    app.state.polizas = polizas
     app.state.sessions = deps.sessions
 
     install_error_handlers(app)

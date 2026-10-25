@@ -196,3 +196,30 @@ async def test_la_fabrica_construye_el_adaptador_segun_el_modo():
     http = build_dependencias(Settings(adapters="http", productos_base_url=PRODUCTOS))
     assert type(http.documentos_legales).__name__ == "ProductosClientAdapter"
     await http.aclose()
+
+
+@respx.mock
+async def test_listar_vigentes_con_tipo_lo_envia_a_productos_y_sin_tipo_no():
+    ruta = respx.get(f"{PRODUCTOS}/documentos-legales").mock(
+        return_value=httpx.Response(200, json=[_json(tipo="poliza", version="V1")])
+    )
+
+    con_tipo = await _adapter().listar_vigentes("CO", "es-CO", "poliza")
+    sin_tipo = await _adapter().listar_vigentes("CO", "es-CO")
+
+    assert [d.tipo for d in con_tipo] == ["poliza"]
+    assert ruta.calls[0].request.url.params["tipo"] == "poliza"
+    assert "tipo" not in ruta.calls[1].request.url.params
+    assert len(sin_tipo) == 1
+
+
+async def test_el_doble_en_memoria_filtra_por_tipo():
+    doble = FakeDocumentosLegales()
+
+    registro = await doble.listar_vigentes("CO", "es-CO")
+    polizas = await doble.listar_vigentes("CO", "es-CO", "poliza")
+    otro_idioma = await doble.listar_vigentes("CO", "en-US", "poliza")
+
+    assert [d.tipo for d in registro] == ["terminos", "open-data", "open-finance"]
+    assert [d.tipo for d in polizas] == ["poliza"]
+    assert otro_idioma == []

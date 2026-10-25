@@ -12,8 +12,10 @@ from app.domain import (
     ClienteCore,
     Conflicto,
     ConsentimientoVista,
+    DependenciaNoDisponible,
     EstadoEvidenciaTipo,
     ImagenMuyGrande,
+    Prohibido,
     RecursoNoEncontrado,
     RegistroInput,
     ReglaNegocio,
@@ -35,11 +37,14 @@ class CoreClientAdapter:
         http: ResilientHttpClient,
         *,
         timeout_subida: httpx.Timeout | None = None,
+        timeout_polizas: httpx.Timeout | None = None,
     ) -> None:
         self._http = http
         # Subir una foto incluye el análisis de svc-core: no cabe en los 700 ms de las
         # demás llamadas.
         self._timeout_subida = timeout_subida or httpx.Timeout(5.0, pool=0.1)
+        # Solicitar o leer una póliza pendiente puede emitirla (evaluación, base y evento).
+        self._timeout_polizas = timeout_polizas or httpx.Timeout(3.0, pool=0.1)
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -213,6 +218,72 @@ class CoreClientAdapter:
             )
             for item in resp.json()
         ]
+
+    # --- pólizas (BITS-101) ---
+
+    async def solicitar(self, cliente_id: str, cuerpo: dict) -> tuple[dict, bool]:
+        resp = await self._http.request(
+            "POST",
+            f"{CLIENTES}/{cliente_id}/polizas",
+            json=cuerpo,
+            timeout=self._timeout_polizas,
+            reintentos=0,  # emitir no se repite a ciegas
+        )
+        _asegurar_poliza_ok(resp)
+        creada = resp.status_code == 201
+        logger.info("póliza solicitada cliente_id=%s creada=%s", cliente_id, creada)
+        return resp.json(), creada
+
+    async def listar(self, cliente_id: str, estado: str | None) -> list[dict]:
+        resp = await self._http.request(
+            "GET",
+            f"{CLIENTES}/{cliente_id}/polizas",
+            params={"estado": estado} if estado else None,
+        )
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    async def obtener(self, cliente_id: str, poliza_id: str) -> dict:
+        resp = await self._http.request(
+            "GET", f"{CLIENTES}/{cliente_id}/polizas/{poliza_id}", timeout=self._timeout_polizas
+        )
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    async def documento(self, cliente_id: str, poliza_id: str) -> tuple[dict, bool]:
+        resp = await self._http.request(
+            "GET",
+            f"{CLIENTES}/{cliente_id}/polizas/{poliza_id}/documento",
+            timeout=self._timeout_polizas,
+        )
+        _asegurar_poliza_ok(resp)
+        return resp.json(), resp.status_code == 200
+
+
+_ERRORES_DE_POLIZA = {
+    400: SolicitudInvalida,
+    403: Prohibido,
+    404: RecursoNoEncontrado,
+    409: Conflicto,
+    422: ReglaNegocio,
+    503: DependenciaNoDisponible,
+}
+
+
+def _asegurar_poliza_ok(resp: httpx.Response) -> None:
+    """Traduce el error de svc-core conservando su ``codigo`` y el detalle por campo."""
+    if resp.status_code < 400:
+        return
+    try:
+        cuerpo = resp.json()
+    except ValueError:
+        cuerpo = {}
+    clase = _ERRORES_DE_POLIZA.get(resp.status_code)
+    if clase is None:
+        raise BffError(f"svc-core respondió {resp.status_code}")
+    raise clase(
+        cuerpo.get("detail") or None, errores=cuerpo.get("errores"), codigo=cuerpo.get("codigo")
+    )
 
 
 def _fecha(valor: str | None) -> datetime | None:

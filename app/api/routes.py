@@ -29,13 +29,17 @@ from app.api.schemas import (
     CuentaOut,
     DisponibilidadOut,
     DocumentoLegalOut,
+    DocumentoPolizaOut,
     EstadoEvidenciaOut,
+    EstadoPoliza,
     EvidenciaSubidaOut,
     OtorgarConsentimientoRequest,
+    PolizaOut,
     RefrescoRequest,
     RegistroRequest,
     RegistroResponse,
     SesionOut,
+    SolicitarPolizaRequest,
     TipoDocumentoLegal,
     TipoEvidencia,
 )
@@ -52,6 +56,7 @@ from app.services import (
     DocumentosLegalesService,
     EvidenciasIdentidadService,
     OnboardingService,
+    PolizasService,
 )
 
 logger = logging.getLogger("bff_web.api")
@@ -77,6 +82,13 @@ def get_creditos(request: Request) -> CreditosHipotecariosService:
 
 
 CreditosDep = Annotated[CreditosHipotecariosService, Depends(get_creditos)]
+
+
+def get_polizas(request: Request) -> PolizasService:
+    return request.app.state.polizas
+
+
+PolizasDep = Annotated[PolizasService, Depends(get_polizas)]
 
 
 def get_evidencias(request: Request) -> EvidenciasIdentidadService:
@@ -382,9 +394,10 @@ async def listar_documentos_legales(
     service: DocumentosLegalesDep,
     mercado: MercadoQuery,
     idioma: IdiomaQuery = "es-CO",
+    tipo: Annotated[TipoDocumentoLegal | None, Query()] = None,
 ) -> list[DocumentoLegalOut]:
-    logger.info("GET /v1/documentos-legales: solicitud recibida mercado=%s", mercado)
-    documentos = await service.listar_vigentes(mercado, idioma)
+    logger.info("GET /v1/documentos-legales: solicitud recibida mercado=%s tipo=%s", mercado, tipo)
+    documentos = await service.listar_vigentes(mercado, idioma, tipo)
     return [DocumentoLegalOut.model_validate(d) for d in documentos]
 
 
@@ -431,3 +444,77 @@ async def obtener_creditos_hipotecarios(
     creditos = await service.obtener(claims.cliente_id, mercado)
     response.headers["Cache-Control"] = "no-store"  # datos financieros del cliente
     return CreditosHipotecariosOut.model_validate(creditos)
+
+
+REINTENTO_DOCUMENTO_S = 2
+
+
+@router.post(
+    "/cuenta/polizas",
+    response_model=PolizaOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Pólizas"],
+)
+async def solicitar_mi_poliza(
+    payload: SolicitarPolizaRequest, claims: ClaimsDep, service: PolizasDep, response: Response
+) -> PolizaOut:
+    logger.info("POST /v1/cuenta/polizas: solicitud recibida cliente_id=%s", claims.cliente_id)
+    poliza, creada = await service.solicitar(
+        claims.cliente_id, payload.model_dump(by_alias=True, mode="json")
+    )
+    if not creada:
+        response.status_code = status.HTTP_200_OK
+    response.headers["Cache-Control"] = "no-store"
+    return PolizaOut.model_validate(poliza)
+
+
+@router.get("/cuenta/polizas", response_model=list[PolizaOut], tags=["Pólizas"])
+async def listar_mis_polizas(
+    claims: ClaimsDep,
+    service: PolizasDep,
+    response: Response,
+    estado: Annotated[EstadoPoliza | None, Query()] = None,
+) -> list[PolizaOut]:
+    logger.info("GET /v1/cuenta/polizas: solicitud recibida cliente_id=%s", claims.cliente_id)
+    response.headers["Cache-Control"] = "no-store"
+    return [PolizaOut.model_validate(p) for p in await service.listar(claims.cliente_id, estado)]
+
+
+@router.get("/cuenta/polizas/{poliza_id}", response_model=PolizaOut, tags=["Pólizas"])
+async def obtener_mi_poliza(
+    poliza_id: Annotated[str, Path(min_length=1, max_length=64)],
+    claims: ClaimsDep,
+    service: PolizasDep,
+    response: Response,
+) -> PolizaOut:
+    logger.info(
+        "GET /v1/cuenta/polizas/%s: solicitud recibida cliente_id=%s",
+        sanear_para_log(poliza_id),
+        claims.cliente_id,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return PolizaOut.model_validate(await service.obtener(claims.cliente_id, poliza_id))
+
+
+@router.get(
+    "/cuenta/polizas/{poliza_id}/documento",
+    response_model=DocumentoPolizaOut,
+    tags=["Pólizas"],
+)
+async def documento_de_mi_poliza(
+    poliza_id: Annotated[str, Path(min_length=1, max_length=64)],
+    claims: ClaimsDep,
+    service: PolizasDep,
+    response: Response,
+) -> DocumentoPolizaOut:
+    logger.info(
+        "GET /v1/cuenta/polizas/%s/documento: solicitud recibida cliente_id=%s",
+        sanear_para_log(poliza_id),
+        claims.cliente_id,
+    )
+    cuerpo, listo = await service.documento(claims.cliente_id, poliza_id)
+    if not listo:
+        response.status_code = status.HTTP_202_ACCEPTED
+        response.headers["Retry-After"] = str(REINTENTO_DOCUMENTO_S)
+    response.headers["Cache-Control"] = "no-store"
+    return DocumentoPolizaOut.model_validate(cuerpo)

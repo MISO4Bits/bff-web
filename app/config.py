@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # Subir incluye el análisis en svc-core (hasta ~2,5 s): no cabe en http_timeout_seconds.
     evidencias_timeout_seconds: float = 5.0
 
+    # Pólizas (BITS-101): solicitar o leer una pendiente puede emitirla en svc-core
+    # (evaluación, base de datos y evento), así que no cabe en http_timeout_seconds.
+    polizas_timeout_seconds: float = 3.0
+
     # Patrones de resiliencia hacia dependencias (§6.1: timeout duro 700 ms)
     http_timeout_seconds: float = 0.7
     http_retries: int = 2

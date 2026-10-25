@@ -26,10 +26,13 @@ class ProductosClientAdapter:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def listar_vigentes(self, mercado: str, idioma: str) -> list[DocumentoLegal]:
-        resp = await self._http.request(
-            "GET", "/documentos-legales", params={"mercado": mercado, "idioma": idioma}
-        )
+    async def listar_vigentes(
+        self, mercado: str, idioma: str, tipo: str | None = None
+    ) -> list[DocumentoLegal]:
+        params = {"mercado": mercado, "idioma": idioma}
+        if tipo:
+            params["tipo"] = tipo
+        resp = await self._http.request("GET", "/documentos-legales", params=params)
         if resp.status_code in (400, 422):
             raise SolicitudInvalida(_detalle(resp))
         _asegurar_ok(resp)
