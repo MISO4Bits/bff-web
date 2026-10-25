@@ -1776,8 +1776,11 @@ components:
         datosCredito: { $ref: '#/components/schemas/DatosCredito' }
         origenDatos:
           type: string
-          enum: [DECLARADO]
-          description: De dónde salen los datos del crédito. Hoy los escribe el cliente.
+          enum: [CONFIRMADO, DECLARADO]
+          description: |
+            De dónde salen los datos del crédito. `CONFIRMADO`: coinciden exactamente con una
+            hipoteca que Open Finance reportó. `DECLARADO`: los escribió el cliente o no hay
+            con qué compararlos.
         oferta: { $ref: '#/components/schemas/Oferta' }
         perfilRiesgo:
           oneOf:

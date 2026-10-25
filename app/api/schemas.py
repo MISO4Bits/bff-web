@@ -178,7 +178,7 @@ class CotizacionOut(_Model):
     estado: Literal["VIGENTE", "EXPIRADA"]
     producto: Literal["VIDA_HIPOTECARIO"]
     datos_credito: DatosCreditoOut
-    origen_datos: Literal["DECLARADO"]
+    origen_datos: Literal["CONFIRMADO", "DECLARADO"]
     oferta: OfertaOut
     perfil_riesgo: PerfilRiesgoOut | None = None
     vigencia_cotizacion: VigenciaOut
