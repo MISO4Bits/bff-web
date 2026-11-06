@@ -20,7 +20,9 @@ from app.domain import (
     RegistroInput,
     ReglaNegocio,
     ResultadoEvidencia,
+    RolConsola,
     SolicitudInvalida,
+    UsuarioInterno,
 )
 from app.logging_utils import sanear_para_log
 from app.resilience import ResilientHttpClient
@@ -29,6 +31,7 @@ logger = logging.getLogger("bff_web.adapters.core")
 
 # Rutas de svc-core: todo vive bajo /v1 desde BITS-275.
 CLIENTES = "/v1/clientes"
+USUARIOS_INTERNOS = "/v1/usuarios-internos"
 
 
 class CoreClientAdapter:
@@ -38,6 +41,7 @@ class CoreClientAdapter:
         *,
         timeout_subida: httpx.Timeout | None = None,
         timeout_polizas: httpx.Timeout | None = None,
+        timeout_cuentas: httpx.Timeout | None = None,
     ) -> None:
         self._http = http
         # Subir una foto incluye el análisis de svc-core: no cabe en los 700 ms de las
@@ -45,6 +49,8 @@ class CoreClientAdapter:
         self._timeout_subida = timeout_subida or httpx.Timeout(5.0, pool=0.1)
         # Solicitar o leer una póliza pendiente puede emitirla (evaluación, base y evento).
         self._timeout_polizas = timeout_polizas or httpx.Timeout(3.0, pool=0.1)
+        # Crear una cuenta incluye la llamada de svc-core a Identity Platform (hasta ~3 s).
+        self._timeout_cuentas = timeout_cuentas or httpx.Timeout(4.0, pool=0.1)
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -89,6 +95,31 @@ class CoreClientAdapter:
         cliente = _a_cliente(resp.json())
         logger.info("cliente creado cliente_id=%s", cliente.id)
         return cliente
+
+    async def crear_usuario_interno(
+        self, correo: str, contrasena: str, rol: RolConsola, nombre: str | None
+    ) -> UsuarioInterno:
+        cuerpo: dict = {"correo": correo, "contrasena": contrasena, "rol": str(rol)}
+        if nombre:
+            cuerpo["nombre"] = nombre
+        # Sin reintentos: crear no es idempotente y el segundo intento daría un 409 engañoso.
+        resp = await self._http.request(
+            "POST", USUARIOS_INTERNOS, json=cuerpo, reintentos=0, timeout=self._timeout_cuentas
+        )
+        if resp.status_code == 201:
+            datos = resp.json()
+            logger.info("usuario interno creado uid=%s rol=%s", datos["uid"], datos["rol"])
+            return UsuarioInterno(
+                uid=datos["uid"], correo=datos["correo"], rol=RolConsola(datos["rol"])
+            )
+        cuerpo_error = _cuerpo_de_error(resp)
+        if resp.status_code == 409:
+            raise Conflicto.por_campo("correo")
+        if resp.status_code in (400, 422):
+            raise SolicitudInvalida(
+                cuerpo_error.get("detail") or None, errores=cuerpo_error.get("errores")
+            )
+        raise BffError(f"svc-core respondió {resp.status_code}")
 
     async def obtener_cliente(self, cliente_id: str) -> ClienteCore:
         resp = await self._http.request("GET", f"{CLIENTES}/{cliente_id}")
@@ -288,6 +319,14 @@ def _asegurar_poliza_ok(resp: httpx.Response) -> None:
 
 def _fecha(valor: str | None) -> datetime | None:
     return datetime.fromisoformat(valor) if valor else None
+
+
+def _cuerpo_de_error(resp: httpx.Response) -> dict:
+    try:
+        cuerpo = resp.json()
+    except ValueError:
+        return {}
+    return cuerpo if isinstance(cuerpo, dict) else {}
 
 
 def _detalle(resp: httpx.Response) -> str:

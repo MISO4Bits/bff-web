@@ -13,7 +13,14 @@ from datetime import date
 
 import jwt
 
-from app.domain import Claims, NoAutorizado, Sesion
+from app.domain import (
+    Claims,
+    ClaimsConsola,
+    NoAutorizado,
+    RolConsola,
+    Sesion,
+    SesionConsola,
+)
 
 _ALG = "HS256"
 
@@ -88,3 +95,80 @@ def _fecha(payload: dict) -> date | None:
         return date.fromisoformat(crudo)
     except (TypeError, ValueError) as exc:
         raise NoAutorizado("token inválido") from exc
+
+
+TIPO_CONSOLA = "consola"
+TIPO_CONSOLA_REFRESCO = "consola_refresco"
+
+
+class ConsolaSessionIssuer:
+    """Sesión del personal de Solventa, separada de la del cliente.
+
+    Los tokens llevan ``typ: consola`` (acceso) o ``consola_refresco``. Como el verificador del
+    cliente exige ``typ: access``, un token del personal recibe 401 en ``/v1/cuenta/*``, y el de
+    un cliente recibe 401 aquí. El rol viaja en el token: un cambio de rol se nota al volver a
+    iniciar sesión (el refresco no consulta a Identity Platform).
+    """
+
+    def __init__(
+        self, secret: str, *, ttl_seconds: int = 900, refresh_ttl_seconds: int = 28800
+    ) -> None:
+        self._secret = secret
+        self._ttl = ttl_seconds
+        self._refresh_ttl = refresh_ttl_seconds
+
+    def emitir(self, claims: ClaimsConsola) -> SesionConsola:
+        ahora = int(time.time())
+        base = {
+            "sub": claims.uid,
+            "correo": claims.correo,
+            "rol": str(claims.rol),
+            "nombre": claims.nombre,
+            "iat": ahora,
+        }
+        acceso = jwt.encode(
+            {**base, "typ": TIPO_CONSOLA, "exp": ahora + self._ttl}, self._secret, algorithm=_ALG
+        )
+        refresco = jwt.encode(
+            {**base, "typ": TIPO_CONSOLA_REFRESCO, "exp": ahora + self._refresh_ttl},
+            self._secret,
+            algorithm=_ALG,
+        )
+        return SesionConsola(
+            access_token=acceso,
+            refresh_token=refresco,
+            expires_in=self._ttl,
+            rol=claims.rol,
+            nombre=claims.nombre,
+        )
+
+    def verificar(self, token: str) -> ClaimsConsola:
+        return self._claims(self._decodificar(token, tipo=TIPO_CONSOLA))
+
+    def refrescar(self, refresh_token: str) -> SesionConsola:
+        return self.emitir(
+            self._claims(self._decodificar(refresh_token, tipo=TIPO_CONSOLA_REFRESCO))
+        )
+
+    def _decodificar(self, token: str, *, tipo: str) -> dict:
+        try:
+            payload = jwt.decode(token, self._secret, algorithms=[_ALG])
+        except jwt.ExpiredSignatureError as exc:
+            raise NoAutorizado("token expirado") from exc
+        except jwt.InvalidTokenError as exc:
+            raise NoAutorizado("token inválido") from exc
+        if payload.get("typ") != tipo:
+            raise NoAutorizado("tipo de token incorrecto")
+        return payload
+
+    @staticmethod
+    def _claims(payload: dict) -> ClaimsConsola:
+        try:
+            return ClaimsConsola(
+                uid=payload["sub"],
+                correo=payload["correo"],
+                rol=RolConsola(payload["rol"]),
+                nombre=payload.get("nombre"),
+            )
+        except (KeyError, ValueError) as exc:
+            raise NoAutorizado("token inválido") from exc

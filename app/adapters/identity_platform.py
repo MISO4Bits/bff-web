@@ -5,11 +5,13 @@ from __future__ import annotations
 import logging
 
 import httpx
+import jwt
 
 from app.domain import (
     MENSAJE_ENLACE_INVALIDO,
     BffError,
     Conflicto,
+    IdentidadPersonal,
     NoAutorizado,
     ReglaNegocio,
     SolicitudInvalida,
@@ -60,6 +62,33 @@ class IdentityPlatformAdapter:
         sub = resp.json()["localId"]
         logger.info("Identity Platform: autenticación exitosa sub=%s", sub)
         return sub
+
+    async def autenticar_personal(self, email: str, password: str) -> IdentidadPersonal:
+        resp = await self._http.request(
+            "POST",
+            "/v1/accounts:signInWithPassword",
+            params=self._params,
+            json={"email": email, "password": password, "returnSecureToken": True},
+        )
+        if resp.status_code == 400:
+            logger.info("Identity Platform: credenciales inválidas (personal)")
+            raise NoAutorizado("credenciales inválidas")
+        _asegurar_ok(resp)
+        datos = resp.json()
+        # El idToken llegó directo de Identity Platform en esta misma respuesta (TLS): sus claims
+        # se leen sin volver a verificar la firma. Nunca se acepta un token que venga del cliente.
+        try:
+            claims = jwt.decode(datos["idToken"], options={"verify_signature": False})
+        except (KeyError, jwt.InvalidTokenError) as exc:
+            raise BffError("Identity Platform no devolvió un token válido") from exc
+        rol = claims.get("rol")
+        logger.info("Identity Platform: autenticación del personal sub=%s", datos["localId"])
+        return IdentidadPersonal(
+            uid=datos["localId"],
+            correo=claims.get("email") or email,
+            rol=rol if isinstance(rol, str) else None,
+            nombre=claims.get("name") or datos.get("displayName") or None,
+        )
 
     async def eliminar(self, sub: str) -> None:
         resp = await self._http.request(
