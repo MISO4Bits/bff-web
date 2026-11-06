@@ -23,13 +23,18 @@ from app.domain import (
     EntidadFinanciera,
     EstadoEvidenciaTipo,
     HipotecaReportada,
+    IdentidadPersonal,
     NoAutorizado,
     Oferta,
     RecursoNoEncontrado,
     RegistroInput,
     ReglaNegocio,
     ResultadoEvidencia,
+    RolConsola,
+    SolicitudInvalida,
+    UsuarioInterno,
     Vigencia,
+    es_correo_interno,
 )
 
 MENSAJE_CEDULA_INCOMPLETA = (
@@ -43,6 +48,26 @@ class FakeIdentityProvider:
         self._por_email: dict[str, tuple[str, str]] = {}
         self._verificados: set[str] = set()
         self._codigos: dict[str, str] = {}
+        # email -> (identidad, password): cuentas del personal de Solventa.
+        self._personal: dict[str, tuple[IdentidadPersonal, str]] = {}
+
+    def sembrar_personal(
+        self, email: str, password: str, rol: str | None, nombre: str | None = None
+    ) -> IdentidadPersonal:
+        """Crea una cuenta del personal (``rol`` puede ser ``None`` o inválido, para probar)."""
+        if email in self._personal:
+            raise Conflicto.por_campo("correo")
+        identidad = IdentidadPersonal(
+            uid=f"uid-{uuid.uuid4().hex[:12]}", correo=email, rol=rol, nombre=nombre
+        )
+        self._personal[email] = (identidad, password)
+        return identidad
+
+    async def autenticar_personal(self, email: str, password: str) -> IdentidadPersonal:
+        registro = self._personal.get(email)
+        if registro is None or registro[1] != password:
+            raise NoAutorizado("credenciales inválidas")
+        return registro[0]
 
     async def registrar(self, email: str, password: str) -> str:
         if email in self._por_email:
@@ -77,6 +102,32 @@ class FakeIdentityProvider:
             raise ReglaNegocio(MENSAJE_ENLACE_INVALIDO)
         self._verificados.add(sub)
         return sub
+
+
+class FakeCuentasInternas:
+    """Imita a svc-core: valida dominio y nombre, y la cuenta queda lista para iniciar sesión."""
+
+    def __init__(self, identity: FakeIdentityProvider) -> None:
+        self._identity = identity
+
+    async def crear_usuario_interno(
+        self, correo: str, contrasena: str, rol: RolConsola, nombre: str | None
+    ) -> UsuarioInterno:
+        correo = correo.strip().lower()
+        if not es_correo_interno(correo):
+            raise SolicitudInvalida(
+                "El correo debe ser del dominio @solventa4bits.com",
+                errores=[{"campo": "correo", "mensaje": "dominio no permitido"}],
+            )
+        if rol is RolConsola.SOCIO and not (nombre or "").strip():
+            raise SolicitudInvalida(
+                "El nombre es obligatorio para una cuenta SOCIO",
+                errores=[{"campo": "nombre", "mensaje": "obligatorio"}],
+            )
+        identidad = self._identity.sembrar_personal(
+            correo, contrasena, str(rol), (nombre or "").strip() or None
+        )
+        return UsuarioInterno(uid=identidad.uid, correo=correo, rol=rol)
 
 
 class FakeCoreIdentity:

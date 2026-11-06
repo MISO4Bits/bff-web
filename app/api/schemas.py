@@ -67,6 +67,28 @@ class SesionOut(_Model):
     refresh_token: str
 
 
+class SesionConsolaOut(_Model):
+    access_token: str
+    token_type: Literal["Bearer"] = "Bearer"
+    expires_in: int
+    refresh_token: str
+    rol: Literal["ADMIN", "SOCIO"]
+    nombre: str | None = None
+
+
+class CrearUsuarioRequest(_Model):
+    correo: str = Field(max_length=254, pattern=_EMAIL)
+    contrasena: str = Field(min_length=10, max_length=128)
+    rol: Literal["ADMIN", "SOCIO"]
+    nombre: str | None = Field(default=None, max_length=100)
+
+
+class UsuarioOut(_Model):
+    uid: str
+    correo: str
+    rol: Literal["ADMIN", "SOCIO"]
+
+
 class CuentaOut(_Model):
     cliente_id: str
     primer_nombre: str

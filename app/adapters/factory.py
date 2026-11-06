@@ -12,6 +12,7 @@ from app.adapters.fakes import (
     FakeCoreIdentity,
     FakeCotizacion,
     FakeCreditosHipotecarios,
+    FakeCuentasInternas,
     FakeDocumentosLegales,
     FakeEntidadesFinancieras,
     FakeEvidencias,
@@ -26,6 +27,7 @@ from app.ports import (
     CoreIdentityPort,
     CotizacionPort,
     CreditosHipotecariosPort,
+    CuentasInternasPort,
     DocumentosLegalesPort,
     EntidadesFinancierasPort,
     EvidenciasIdentidadPort,
@@ -33,7 +35,7 @@ from app.ports import (
     PolizasPort,
 )
 from app.resilience import ResilientHttpClient, build_breaker
-from app.security import SessionIssuer
+from app.security import ConsolaSessionIssuer, SessionIssuer
 
 
 @dataclass
@@ -45,6 +47,9 @@ class Dependencias:
     sessions: SessionIssuer
     creditos: CreditosHipotecariosPort
     entidades: EntidadesFinancierasPort
+    # Sesión del personal (BITS-375) y alta de sus cuentas en svc-core.
+    consola_sessions: ConsolaSessionIssuer
+    cuentas_internas: CuentasInternasPort
     # En modo http es el mismo adaptador que ``core``: se cierra una sola vez.
     evidencias: EvidenciasIdentidadPort
     polizas: PolizasPort
@@ -70,15 +75,24 @@ def build_dependencias(settings: Settings) -> Dependencias:
         refresh_ttl_seconds=settings.refresh_ttl_seconds,
     )
 
+    consola_sessions = ConsolaSessionIssuer(
+        settings.session_secret,
+        ttl_seconds=settings.consola_ttl_seconds,
+        refresh_ttl_seconds=settings.consola_refresh_ttl_seconds,
+    )
+
     if settings.adapters == "fake":
+        identity = FakeIdentityProvider()
         return Dependencias(
-            FakeIdentityProvider(),
+            identity,
             FakeCoreIdentity(),
             FakeCotizacion(),
             FakeDocumentosLegales(),
             sessions,
             FakeCreditosHipotecarios(),
             FakeEntidadesFinancieras(),
+            consola_sessions,
+            FakeCuentasInternas(identity),
             FakeEvidencias(),
             FakePolizas(),
         )
@@ -158,6 +172,9 @@ def build_dependencias(settings: Settings) -> Dependencias:
             timeout_polizas=httpx.Timeout(
                 settings.polizas_timeout_seconds, pool=settings.http_pool_timeout_seconds
             ),
+            timeout_cuentas=httpx.Timeout(
+                settings.cuentas_timeout_seconds, pool=settings.http_pool_timeout_seconds
+            ),
         )
         return Dependencias(
             IdentityPlatformAdapter(identity_http, settings.identity_api_key),
@@ -167,6 +184,8 @@ def build_dependencias(settings: Settings) -> Dependencias:
             sessions,
             PerfilamientoClientAdapter(perfilamiento_http),
             productos,
+            consola_sessions,
+            core,
             core,
             core,
         )
