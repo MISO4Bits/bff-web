@@ -171,3 +171,24 @@ class SiniestrosPort(Protocol):
     async def obtener_siniestro(self, cliente_id: str, siniestro_id: str) -> dict:
         """El detalle. Uno de otro cliente responde igual que uno que no existe."""
         ...
+
+    # --- bandeja del ADMIN (BITS-377) ---
+
+    async def bandeja_siniestros(self, estado: str | None, automatico: bool | None) -> list[dict]:
+        """Los siniestros de todos los clientes, ordenados por plazo."""
+        ...
+
+    async def detalle_siniestro_interno(self, siniestro_id: str) -> dict:
+        """El detalle del ``ADMIN``: cliente, póliza, saldo guardado, destino del pago y
+        decisiones."""
+        ...
+
+    async def archivo_de_siniestro(self, siniestro_id: str, archivo_id: str) -> tuple[bytes, str]:
+        """Un archivo del siniestro y su tipo de contenido."""
+        ...
+
+    async def decidir_siniestro(self, siniestro_id: str, cuerpo: dict) -> dict:
+        """Paga, pide más evidencia o rechaza. ``cuerpo`` lleva el ``agente`` (la sesión). Un
+        siniestro ya cerrado se devuelve como quedó; uno en ``FALTA_INFORMACION`` responde
+        ``Conflicto``; un valor sobre la suma asegurada, ``ReglaNegocio``."""
+        ...

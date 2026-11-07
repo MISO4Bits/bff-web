@@ -432,3 +432,59 @@ class SiniestroOut(SiniestroResumenOut):
     pago: PagoOut | None = None
     archivos: list[ArchivoSiniestroOut]
     evento: EventoSismoOut | None = None
+
+
+# --- Bandeja de siniestros del ADMIN (BITS-377) ---
+
+
+class DecidirSiniestroRequest(_Model):
+    """La decisión del ``ADMIN``. No lleva ``agente``: lo pone el servicio con el correo de la
+    sesión (un campo de más es 400)."""
+
+    decision: Literal["PAGAR", "PEDIR_EVIDENCIA", "RECHAZAR"]
+    dano: Literal["REPARABLE", "PERDIDA_TOTAL"] | None = None
+    valor: float | None = Field(default=None, gt=0, le=1_000_000_000_000)
+    detalle: str | None = Field(default=None, max_length=2000)
+    motivo: str | None = Field(default=None, max_length=2000)
+
+
+class PolizaDelSiniestroOut(_Model):
+    id: str
+    numero: str | None = None
+    cobertura: Literal["VIDA", "HOGAR"]
+    suma_asegurada: float
+
+
+class SaldoCreditoOut(_Model):
+    valor: float
+    entidad: str
+    consultado_en: AwareDatetime
+    origen: Literal["OPEN_FINANCE", "POLIZA"]
+
+
+class DecisionSiniestroOut(_Model):
+    agente: str
+    decision: Literal["PAGAR", "PEDIR_EVIDENCIA", "RECHAZAR"]
+    fecha: AwareDatetime
+    dano: Literal["REPARABLE", "PERDIDA_TOTAL"] | None = None
+    valor: float | None = None
+    detalle: str | None = None
+    motivo: str | None = None
+
+
+class SiniestroInternoResumenOut(SiniestroResumenOut):
+    """Una fila de la bandeja."""
+
+    cliente_id: str
+    fecha_limite: AwareDatetime | None = None
+
+
+class SiniestroInternoOut(SiniestroOut):
+    """El detalle del ``ADMIN``: el del cliente más el saldo guardado, cómo recibe el pago, la
+    póliza afectada y las decisiones."""
+
+    cliente_id: str
+    poliza: PolizaDelSiniestroOut
+    saldo_credito: SaldoCreditoOut
+    destino_pago: dict | None = None
+    decisiones: list[DecisionSiniestroOut]

@@ -33,6 +33,7 @@ logger = logging.getLogger("bff_web.adapters.core")
 # Rutas de svc-core: todo vive bajo /v1 desde BITS-275.
 CLIENTES = "/v1/clientes"
 USUARIOS_INTERNOS = "/v1/usuarios-internos"
+SINIESTROS = "/v1/siniestros"
 
 
 class CoreClientAdapter:
@@ -263,6 +264,47 @@ class CoreClientAdapter:
             "GET", f"{CLIENTES}/{cliente_id}/siniestros/{quote(siniestro_id, safe='')}"
         )
         _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    # --- bandeja del ADMIN (BITS-377) ---
+
+    async def bandeja_siniestros(self, estado: str | None, automatico: bool | None) -> list[dict]:
+        params: dict[str, str] = {}
+        if estado is not None:
+            params["estado"] = estado
+        if automatico is not None:
+            params["automatico"] = "true" if automatico else "false"
+        resp = await self._http.request("GET", SINIESTROS, params=params or None)
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    async def detalle_siniestro_interno(self, siniestro_id: str) -> dict:
+        resp = await self._http.request("GET", f"{SINIESTROS}/{quote(siniestro_id, safe='')}")
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    async def archivo_de_siniestro(self, siniestro_id: str, archivo_id: str) -> tuple[bytes, str]:
+        resp = await self._http.request(
+            "GET",
+            f"{SINIESTROS}/{quote(siniestro_id, safe='')}/evidencias/{quote(archivo_id, safe='')}",
+            timeout=self._timeout_subida,
+        )
+        _asegurar_poliza_ok(resp)
+        return resp.content, resp.headers.get("content-type", "application/octet-stream")
+
+    async def decidir_siniestro(self, siniestro_id: str, cuerpo: dict) -> dict:
+        # Sin reintentos: una decisión no se repite a ciegas. Se espera lo que tarden la base y el
+        # aviso al cliente.
+        resp = await self._http.request(
+            "POST",
+            f"{SINIESTROS}/{quote(siniestro_id, safe='')}/decisiones",
+            json=cuerpo,
+            reintentos=0,
+            timeout=self._timeout_polizas,
+        )
+        _asegurar_poliza_ok(resp)
+        # Ni el agente (su correo) ni el valor se escriben en el log.
+        logger.info("decisión sobre siniestro enviada decision=%s", cuerpo.get("decision"))
         return resp.json()
 
     # --- pólizas (BITS-101) ---
