@@ -745,3 +745,158 @@ class FakeSiniestros:
         if valor > para_banco:
             lineas.append({**al_cliente, "valor": valor - para_banco})
         return lineas
+
+
+class FakeVentasSocio:
+    """Venta directa en memoria con la forma que entrega svc-core: clientes asistidos, precio y
+    pólizas emitidas. Repite la respuesta de una venta con la misma ``Idempotency-Key``."""
+
+    _TASA_VIDA = 0.000176  # prima mensual por peso de crédito
+    _TASA_HOGAR = 0.000099
+
+    def __init__(self) -> None:
+        self.clientes: dict[str, dict] = {}
+        self.ventas: list[dict] = []
+        self.llamadas: list[tuple] = []
+        self._por_clave: dict[tuple[str, str], dict] = {}
+
+    def _cliente(self, cliente_id: str) -> dict:
+        cliente = self.clientes.get(cliente_id)
+        if cliente is None:
+            raise RecursoNoEncontrado("Cliente no encontrado")
+        return cliente
+
+    async def buscar_cliente(
+        self, *, correo: str | None, tipo_documento: str | None, numero_documento: str | None
+    ) -> dict:
+        self.llamadas.append(("buscar_cliente", correo, tipo_documento, numero_documento))
+        for cliente in self.clientes.values():
+            if correo is not None and cliente["email"].lower() == correo.strip().lower():
+                return cliente
+            if (
+                tipo_documento is not None
+                and cliente["tipoDocumento"] == tipo_documento
+                and cliente["numeroDocumento"] == numero_documento
+            ):
+                return cliente
+        raise RecursoNoEncontrado("Cliente no encontrado")
+
+    async def crear_cliente_asistido(self, cuerpo: dict, idempotency_key: str | None) -> dict:
+        self.llamadas.append(("crear_cliente_asistido", cuerpo, idempotency_key))
+        correo = cuerpo["email"].strip().lower()
+        for cliente in self.clientes.values():
+            if cliente["email"] == correo:
+                raise Conflicto.por_campo("correo")
+            if (cliente["tipoDocumento"], cliente["numeroDocumento"]) == (
+                cuerpo["tipoDocumento"],
+                cuerpo["numeroDocumento"],
+            ):
+                raise Conflicto.por_campo("documento")
+        cliente = {
+            "id": str(uuid.uuid4()),
+            "identityRef": f"fake-{uuid.uuid4()}",
+            **{k: v for k, v in cuerpo.items() if k != "email"},
+            "email": correo,
+            "estado": "ACTIVO",
+            "correoConfirmado": True,
+            "creadoEn": datetime.now(UTC).isoformat(),
+        }
+        self.clientes[cliente["id"]] = cliente
+        return cliente
+
+    async def calcular_precio(self, cuerpo: dict) -> dict:
+        self.llamadas.append(("calcular_precio", cuerpo))
+        cliente = self._cliente(cuerpo["clienteId"])
+        valor = float(cuerpo["valorCredito"])
+        ahora = datetime.now(UTC)
+        nacimiento = datetime.fromisoformat(cliente["fechaNacimiento"]).date()
+        edad = (
+            ahora.year
+            - nacimiento.year
+            - ((ahora.month, ahora.day) < (nacimiento.month, nacimiento.day))
+        )
+        if not 18 <= edad <= 65 or edad * 12 + cuerpo["plazoRestanteMeses"] > 75 * 12:
+            raise ReglaNegocio("Edad o plazo fuera de rango", codigo="FUERA_DE_RANGO")
+        vida = round(valor * self._TASA_VIDA)
+        hogar = round(valor * self._TASA_HOGAR)
+        return {
+            "edad": edad,
+            "datosCredito": {
+                "valorCredito": valor,
+                "plazoRestanteMeses": cuerpo["plazoRestanteMeses"],
+                "entidadAcreedora": cuerpo["entidadAcreedora"],
+                "saldoInsoluto": valor,
+            },
+            "origenDatos": "CONFIRMADO",
+            "tasa": 0.196,
+            "versionTarifa": 2,
+            "coberturaMeses": cuerpo["plazoRestanteMeses"],
+            "coberturas": [
+                {
+                    "codigo": "VIDA",
+                    "obligatoria": True,
+                    "sumaAsegurada": valor,
+                    "primaNeta": vida,
+                    "iva": 0,
+                    "primaTotal": vida,
+                },
+                {
+                    "codigo": "HOGAR",
+                    "obligatoria": False,
+                    "sumaAsegurada": valor,
+                    "primaNeta": hogar,
+                    "iva": round(hogar * 0.19),
+                    "primaTotal": hogar + round(hogar * 0.19),
+                },
+            ],
+            "vigenciaCotizacion": {
+                "desde": ahora.isoformat(),
+                "hasta": (ahora + timedelta(days=30)).isoformat(),
+            },
+            "creadaEn": ahora.isoformat(),
+        }
+
+    async def vender(self, cuerpo: dict, idempotency_key: str | None) -> dict:
+        self.llamadas.append(("vender", cuerpo, idempotency_key))
+        clave = (cuerpo["socioId"], idempotency_key or "")
+        if idempotency_key and clave in self._por_clave:
+            return self._por_clave[clave]
+        if "VIDA" not in cuerpo["coberturas"]:
+            raise SolicitudInvalida(
+                "La cobertura VIDA es obligatoria",
+                errores=[{"campo": "coberturas", "mensaje": "La cobertura VIDA es obligatoria"}],
+            )
+        precio = await self.calcular_precio(cuerpo)
+        coberturas = [c for c in precio["coberturas"] if c["codigo"] in cuerpo["coberturas"]]
+        ahora = datetime.now(UTC).isoformat()
+        poliza = {
+            "polizaId": str(uuid.uuid4()),
+            "clienteId": cuerpo["clienteId"],
+            "socioId": cuerpo["socioId"],
+            "numero": f"SOL-VH-2026-FAKE{len(self.ventas) + 1:02d}",
+            "estado": "EMITIDA",
+            "producto": "VIDA_HIPOTECARIO",
+            "creadaEn": ahora,
+            "emitidaEn": ahora,
+            "solicitudVigenteHasta": None,
+            "vigencia": {"desde": ahora, "hasta": precio["vigenciaCotizacion"]["hasta"]},
+            "coberturas": coberturas,
+            "primaTotalMensual": sum(c["primaTotal"] for c in coberturas),
+            "moneda": "COP",
+            "datosCredito": precio["datosCredito"],
+            "origenDatos": "CONFIRMADO",
+            "cotizacionCreadaEn": precio["creadaEn"],
+            "pendientes": [],
+            "documento": {"estado": "DISPONIBLE"},
+            "documentosAceptados": [{"tipo": "poliza", "version": "V1", "aceptadoEn": ahora}],
+            "rechazo": None,
+            "datosVenta": {
+                "direccion": cuerpo["direccion"],
+                "municipio": cuerpo["municipio"],
+                "cuotaMensual": cuerpo["cuotaMensual"],
+            },
+        }
+        self.ventas.append(poliza)
+        if idempotency_key:
+            self._por_clave[clave] = poliza
+        return poliza
