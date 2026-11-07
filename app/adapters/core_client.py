@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
+from urllib.parse import quote
 
 import httpx
 
@@ -249,6 +250,20 @@ class CoreClientAdapter:
             )
             for item in resp.json()
         ]
+
+    # --- siniestros (BITS-383, BITS-384) ---
+
+    async def listar_siniestros(self, cliente_id: str) -> list[dict]:
+        resp = await self._http.request("GET", f"{CLIENTES}/{cliente_id}/siniestros")
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    async def obtener_siniestro(self, cliente_id: str, siniestro_id: str) -> dict:
+        resp = await self._http.request(
+            "GET", f"{CLIENTES}/{cliente_id}/siniestros/{quote(siniestro_id, safe='')}"
+        )
+        _asegurar_poliza_ok(resp)
+        return resp.json()
 
     # --- pólizas (BITS-101) ---
 

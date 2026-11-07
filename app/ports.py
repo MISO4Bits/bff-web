@@ -156,3 +156,18 @@ class PolizasPort(Protocol):
         """Estado del documento. El booleano es ``True`` si ya está listo (``False``: se está
         generando)."""
         ...
+
+
+@runtime_checkable
+class SiniestrosPort(Protocol):
+    """Siniestros del cliente en svc-core (BITS-383, BITS-384). Devuelve el cuerpo tal cual lo
+    entrega svc-core (ya validado allá); los errores salen como ``BffError`` con su ``codigo``.
+    El portal web solo consulta: el reporte y lo que falta se envían desde la app móvil."""
+
+    async def listar_siniestros(self, cliente_id: str) -> list[dict]:
+        """Los siniestros del cliente, del más reciente al más antiguo."""
+        ...
+
+    async def obtener_siniestro(self, cliente_id: str, siniestro_id: str) -> dict:
+        """El detalle. Uno de otro cliente responde igual que uno que no existe."""
+        ...
