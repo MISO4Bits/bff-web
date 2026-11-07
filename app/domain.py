@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
+from enum import StrEnum
 
 
 @dataclass(frozen=True)
@@ -355,3 +356,57 @@ class DependenciaNoDisponible(BffError):
 class Prohibido(BffError):
     status = 403
     title = "Acceso denegado"
+
+
+# --- Backoffice: sesión del personal de Solventa (BITS-375) ---
+
+DOMINIO_INTERNO = "solventa4bits.com"
+
+
+class RolConsola(StrEnum):
+    """Rol de una cuenta del personal. Lo fija svc-core en los ``customAttributes``."""
+
+    ADMIN = "ADMIN"
+    SOCIO = "SOCIO"
+
+
+def es_correo_interno(correo: str) -> bool:
+    """El correo es del dominio de Solventa, sin distinguir mayúsculas."""
+    usuario, _, dominio = correo.strip().lower().rpartition("@")
+    return bool(usuario) and dominio == DOMINIO_INTERNO
+
+
+@dataclass(frozen=True)
+class IdentidadPersonal:
+    """Lo que Identity Platform dice de una cuenta del personal al autenticarla. ``rol`` es el
+    claim tal cual llegó: puede faltar o ser desconocido."""
+
+    uid: str
+    correo: str
+    rol: str | None
+    nombre: str | None = None
+
+
+@dataclass(frozen=True)
+class ClaimsConsola:
+    uid: str
+    correo: str
+    rol: RolConsola
+    nombre: str | None = None
+
+
+@dataclass(frozen=True)
+class SesionConsola:
+    access_token: str
+    refresh_token: str
+    expires_in: int
+    rol: RolConsola
+    nombre: str | None = None
+    token_type: str = "Bearer"
+
+
+@dataclass(frozen=True)
+class UsuarioInterno:
+    uid: str
+    correo: str
+    rol: RolConsola

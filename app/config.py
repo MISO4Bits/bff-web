@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     session_ttl_seconds: int = 3600
     refresh_ttl_seconds: int = 86400
 
+    # Sesión del personal de Solventa (BITS-375), separada de la del cliente. Más corta: el
+    # acceso dura 15 minutos y el refresco una jornada.
+    consola_ttl_seconds: int = 900
+    consola_refresh_ttl_seconds: int = 28800
+    # Crear una cuenta interna pasa por svc-core e Identity Platform: no cabe en
+    # http_timeout_seconds.
+    cuentas_timeout_seconds: float = 4.0
+
     # Observabilidad (DI-008): OTLP/gRPC hacia Grafana Alloy dentro del
     # cluster. Deshabilitado por defecto — en local/tests no hay receptor
     # escuchando; se habilita vía BFF_OTEL_ENABLED=true en el manifiesto de

@@ -13,8 +13,11 @@ from app.domain import (
     DocumentoLegal,
     EntidadFinanciera,
     EstadoEvidenciaTipo,
+    IdentidadPersonal,
     RegistroInput,
     ResultadoEvidencia,
+    RolConsola,
+    UsuarioInterno,
 )
 
 
@@ -26,6 +29,11 @@ class IdentityProviderPort(Protocol):
 
     async def autenticar(self, email: str, password: str) -> str:
         """Valida credenciales y devuelve el ``sub``. Lanza ``NoAutorizado`` si fallan."""
+        ...
+
+    async def autenticar_personal(self, email: str, password: str) -> IdentidadPersonal:
+        """Como ``autenticar``, pero devuelve también el rol y el nombre de la cuenta del
+        personal (claims del token de Identity Platform). Lanza ``NoAutorizado`` si fallan."""
         ...
 
     async def eliminar(self, sub: str) -> None:
@@ -40,6 +48,17 @@ class IdentityProviderPort(Protocol):
         """Canjea el código de un solo uso del enlace de verificación, deja el correo
         verificado en Identity Platform y devuelve el ``sub`` del usuario. Lanza
         ``ReglaNegocio`` si el código no es válido, ya se usó o venció."""
+        ...
+
+
+@runtime_checkable
+class CuentasInternasPort(Protocol):
+    async def crear_usuario_interno(
+        self, correo: str, contrasena: str, rol: RolConsola, nombre: str | None
+    ) -> UsuarioInterno:
+        """Pide a svc-core crear la cuenta del personal. Lanza ``Conflicto`` si el correo existe,
+        ``SolicitudInvalida`` si no cumple las reglas y ``DependenciaNoDisponible`` si el
+        proveedor de identidad falla."""
         ...
 
 

@@ -44,6 +44,10 @@ tags:
 
   - name: Pólizas
     description: Solicitud, consulta y documento de mis pólizas (BITS-101).
+  - name: Ingreso del personal
+    description: Ingreso y refresco de la sesión del Backoffice para `ADMIN` y `SOCIO` (BITS-375).
+  - name: Backoffice
+    description: Rutas del Backoffice. Todas exigen una sesión del personal con rol `ADMIN`, salvo el ingreso y el refresco (`/v1/backoffice/sesiones*`).
 security:
   - clienteAuth: []
 
@@ -219,6 +223,101 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Sesion' }
         '401': { $ref: '#/components/responses/NoAutorizado' }
+
+  /v1/backoffice/sesiones:
+    post:
+      operationId: iniciarSesionPersonal
+      tags: [Ingreso del personal]
+      summary: Inicia la sesión del Backoffice con correo y contraseña
+      description: |
+        **Público.** Solo para el personal de Solventa: correo `@solventa4bits.com` y una cuenta
+        con rol `ADMIN` o `SOCIO`. Nadie elige el rol al ingresar: lo trae la cuenta.
+
+        El token es de otro tipo (`typ: consola`) que el del cliente: no sirve en `/v1/cuenta/*`
+        ni en `/v1/cotizaciones/*` (401), y el de un cliente no sirve en `/v1/backoffice/*` ni en
+        `/v1/socio/*` (401). El acceso dura 15 minutos y el refresco 8 horas.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CredencialesRequest' }
+      responses:
+        '200':
+          description: Sesión iniciada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SesionConsola' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '403':
+          description: |
+            `ACCESO_POR_PORTAL_CLIENTE` (el correo no es `@solventa4bits.com`: los clientes entran
+            por solventa4bits.com, y no se consulta a Identity Platform) o `CUENTA_SIN_ROL` (la
+            cuenta existe pero no tiene rol `ADMIN` ni `SOCIO`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemaConsola' }
+
+  /v1/backoffice/sesiones/refresco:
+    post:
+      operationId: refrescarSesionPersonal
+      tags: [Ingreso del personal]
+      summary: Renueva la sesión del Backoffice
+      description: |
+        **Público.** Conserva el rol del token de refresco: un cambio de rol se nota al volver
+        a iniciar sesión.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: Nueva sesión.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SesionConsola' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+
+  /v1/backoffice/usuarios:
+    post:
+      operationId: crearUsuarioInterno
+      tags: [Backoffice]
+      summary: Crea una cuenta del personal (administrador o socio)
+      description: |
+        Solo `ADMIN`. Crea la cuenta en Identity Platform a través de svc-core, con el correo ya
+        verificado. El correo debe ser `@solventa4bits.com`. `nombre` es obligatorio para `SOCIO`
+        (es el que ve el cliente) y puede repetirse entre cuentas. El `uid` de un `SOCIO` es su
+        `socioId`.
+      security:
+        - consolaAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CrearUsuarioRequest' }
+      responses:
+        '201':
+          description: Cuenta creada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Usuario' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '403':
+          description: La sesión no es de un `ADMIN` (`codigo = ROL_NO_PERMITIDO`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemaConsola' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
 
   /v1/cuenta:
     get:
@@ -783,6 +882,11 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Token de Identity Platform obtenido en `/v1/registro` o `/v1/sesiones`.
+    consolaAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 'Token de la sesión del personal, obtenido en `/v1/backoffice/sesiones` (`typ: consola`).'
     identityPlatformToken:
       type: http
       scheme: bearer
@@ -1047,6 +1151,50 @@ components:
             Productos, igual que las versiones de política del registro.
 
             '
+    ProblemaConsola:
+      allOf:
+      - $ref: '#/components/schemas/Problema'
+      - type: object
+        properties:
+          codigo:
+            type: string
+            enum:
+            - ACCESO_POR_PORTAL_CLIENTE
+            - CUENTA_SIN_ROL
+            - ROL_NO_PERMITIDO
+    SesionConsola:
+      type: object
+      additionalProperties: false
+      required: [accessToken, tokenType, expiresIn, refreshToken, rol]
+      properties:
+        accessToken: { type: string }
+        tokenType: { type: string, const: Bearer }
+        expiresIn: { type: integer, description: Segundos de vigencia del accessToken. }
+        refreshToken: { type: string }
+        rol: { $ref: '#/components/schemas/RolConsola' }
+        nombre:
+          type: [string, 'null']
+          description: Nombre de la cuenta. Para un `SOCIO` es el que ve el cliente.
+    RolConsola:
+      type: string
+      enum: [ADMIN, SOCIO]
+    CrearUsuarioRequest:
+      type: object
+      additionalProperties: false
+      required: [correo, contrasena, rol]
+      properties:
+        correo: { type: string, format: email, maxLength: 254 }
+        contrasena: { type: string, format: password, minLength: 10, maxLength: 128 }
+        rol: { $ref: '#/components/schemas/RolConsola' }
+        nombre: { type: string, maxLength: 100 }
+    Usuario:
+      type: object
+      additionalProperties: false
+      required: [uid, correo, rol]
+      properties:
+        uid: { type: string }
+        correo: { type: string }
+        rol: { $ref: '#/components/schemas/RolConsola' }
     ProblemaPoliza:
       allOf:
       - $ref: '#/components/schemas/Problema'

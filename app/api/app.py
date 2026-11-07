@@ -8,11 +8,13 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from app.adapters.factory import build_dependencias
+from app.api.consola import backoffice_router, sesion_router, socio_router
 from app.api.cors import configure_cors
 from app.api.errors import install_error_handlers
 from app.api.limites import install_limite_de_subidas
 from app.api.routes import router
 from app.config import Settings, get_settings
+from app.consola import ConsolaService
 from app.logging_utils import SinRuidoDeHealthCheck
 from app.services import (
     CreditosHipotecariosService,
@@ -40,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     evidencias = EvidenciasIdentidadService(deps.evidencias, max_bytes=settings.evidencia_max_bytes)
     polizas = PolizasService(deps.polizas)
+    consola = ConsolaService(deps.identity, deps.cuentas_internas, deps.consola_sessions)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -58,10 +61,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.evidencias = evidencias
     app.state.polizas = polizas
     app.state.sessions = deps.sessions
+    app.state.consola = consola
+    app.state.consola_sessions = deps.consola_sessions
 
     install_error_handlers(app)
     install_limite_de_subidas(app, settings.evidencia_max_bytes)
     app.include_router(router)
+    app.include_router(sesion_router)
+    app.include_router(backoffice_router)
+    app.include_router(socio_router)
 
     @app.get("/health", include_in_schema=False)
     async def health() -> dict:
