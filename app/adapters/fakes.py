@@ -600,9 +600,10 @@ class FakePolizas:
 
 
 class FakeSiniestros:
-    """Siniestros en memoria con la forma que entrega svc-core. El portal web solo consulta, así
-    que no hay cómo crearlos desde aquí: ``sembrar`` deja uno ya armado, para pruebas y para el
-    front."""
+    """Siniestros en memoria con la forma que entrega svc-core, con las reglas de las decisiones
+    del ``ADMIN``. El portal del cliente solo consulta; la bandeja decide. No hay cómo crearlos
+    desde aquí: ``sembrar`` deja uno ya armado (con los campos internos: ``clienteId``, ``poliza``,
+    ``saldoCredito``, ``destinoPago`` y ``decisiones``), para pruebas y para el front."""
 
     _RESUMEN = (
         "id",
@@ -617,10 +618,19 @@ class FakeSiniestros:
 
     def __init__(self) -> None:
         self._items: dict[str, tuple[str, dict]] = {}
+        self._archivos: dict[tuple[str, str], tuple[bytes, str]] = {}
+        self.decisiones: list[tuple[str, dict]] = []
 
     def sembrar(self, cliente_id: str, siniestro: dict) -> dict:
         self._items[siniestro["id"]] = (cliente_id, siniestro)
         return siniestro
+
+    def sembrar_archivo(
+        self, siniestro_id: str, archivo_id: str, contenido: bytes, content_type: str
+    ) -> None:
+        self._archivos[(siniestro_id, archivo_id)] = (contenido, content_type)
+
+    # --- el cliente ---
 
     async def listar_siniestros(self, cliente_id: str) -> list[dict]:
         propios = [s for dueno, s in self._items.values() if dueno == cliente_id]
@@ -632,3 +642,106 @@ class FakeSiniestros:
         if dueno != cliente_id:
             raise RecursoNoEncontrado("Siniestro no encontrado")
         return dict(siniestro)
+
+    # --- el ADMIN ---
+
+    def _por_id(self, siniestro_id: str) -> dict:
+        if siniestro_id not in self._items:
+            raise RecursoNoEncontrado("Siniestro no encontrado")
+        return self._items[siniestro_id][1]
+
+    async def bandeja_siniestros(self, estado: str | None, automatico: bool | None) -> list[dict]:
+        coinciden = [
+            (dueno, s)
+            for dueno, s in self._items.values()
+            if (estado is None or s["estado"] == estado)
+            and (automatico is None or s["automatico"] is automatico)
+        ]
+        coinciden.sort(key=lambda par: par[1]["reportadoEn"], reverse=True)
+        con_plazo = sorted(
+            (p for p in coinciden if p[1].get("fechaLimite")), key=lambda p: p[1]["fechaLimite"]
+        )
+        sin_plazo = [p for p in coinciden if not p[1].get("fechaLimite")]
+        return [
+            {
+                **{c: s[c] for c in self._RESUMEN},
+                "clienteId": dueno,
+                "fechaLimite": s.get("fechaLimite"),
+            }
+            for dueno, s in [*con_plazo, *sin_plazo]
+        ]
+
+    async def detalle_siniestro_interno(self, siniestro_id: str) -> dict:
+        dueno, siniestro = self._items.get(siniestro_id, (None, None))
+        if siniestro is None:
+            raise RecursoNoEncontrado("Siniestro no encontrado")
+        return {**siniestro, "clienteId": dueno}
+
+    async def archivo_de_siniestro(self, siniestro_id: str, archivo_id: str) -> tuple[bytes, str]:
+        self._por_id(siniestro_id)
+        if (siniestro_id, archivo_id) not in self._archivos:
+            raise RecursoNoEncontrado("Archivo no encontrado")
+        return self._archivos[(siniestro_id, archivo_id)]
+
+    async def decidir_siniestro(self, siniestro_id: str, cuerpo: dict) -> dict:
+        self.decisiones.append((siniestro_id, cuerpo))
+        siniestro = self._por_id(siniestro_id)
+        dueno = self._items[siniestro_id][0]
+        if siniestro["estado"] in ("PAGADO", "RECHAZADO"):
+            return {**siniestro, "clienteId": dueno}
+        if siniestro["estado"] != "EN_ESTUDIO":
+            raise Conflicto(
+                f"El siniestro está {siniestro['estado']}: no admite esa acción",
+                codigo="ESTADO_NO_PERMITE",
+            )
+        ahora = datetime.now(UTC).isoformat()
+        decision = {
+            "agente": cuerpo["agente"],
+            "decision": cuerpo["decision"],
+            "fecha": ahora,
+            "dano": cuerpo.get("dano"),
+            "valor": cuerpo.get("valor"),
+            "detalle": cuerpo.get("detalle"),
+            "motivo": cuerpo.get("motivo"),
+        }
+        if cuerpo["decision"] == "PAGAR":
+            siniestro["pago"] = {"pagadoEn": ahora, "lineas": self._lineas(siniestro, cuerpo)}
+            siniestro["estado"] = "PAGADO"
+        elif cuerpo["decision"] == "PEDIR_EVIDENCIA":
+            if not (cuerpo.get("detalle") or "").strip():
+                raise SolicitudInvalida("Escribe qué falta")
+            siniestro["evidenciaPedida"] = {"detalle": cuerpo["detalle"].strip(), "pedidaEn": ahora}
+            siniestro["estado"] = "FALTA_INFORMACION"
+        else:
+            if not (cuerpo.get("motivo") or "").strip():
+                raise SolicitudInvalida("Escribe el motivo")
+            siniestro["motivoRechazo"] = cuerpo["motivo"].strip()
+            siniestro["estado"] = "RECHAZADO"
+        siniestro["fechaLimite"] = None
+        siniestro["actualizadoEn"] = ahora
+        siniestro["decisiones"] = [*siniestro["decisiones"], decision]
+        return {**siniestro, "clienteId": dueno}
+
+    @staticmethod
+    def _lineas(siniestro: dict, cuerpo: dict) -> list[dict]:
+        saldo = siniestro["saldoCredito"]
+        al_banco = f"{saldo['entidad']}, abono al saldo del crédito"
+        if siniestro["tipo"] == "INCAPACIDAD_TOTAL":
+            return [{"beneficiario": "BANCO", "valor": saldo["valor"], "destino": al_banco}]
+        valor, dano = cuerpo.get("valor"), cuerpo.get("dano")
+        if dano is None or valor is None:
+            raise SolicitudInvalida("Indica el daño y el valor")
+        suma = siniestro["poliza"]["sumaAsegurada"]
+        if valor > suma:
+            raise ReglaNegocio(
+                f"El valor no puede superar la suma asegurada ({suma})",
+                codigo="VALOR_SUPERA_SUMA_ASEGURADA",
+            )
+        al_cliente = {"beneficiario": "CLIENTE", "valor": valor, "destino": "Cuenta del cliente"}
+        if dano == "REPARABLE":
+            return [al_cliente]
+        para_banco = min(valor, saldo["valor"])
+        lineas = [{"beneficiario": "BANCO", "valor": para_banco, "destino": al_banco}]
+        if valor > para_banco:
+            lineas.append({**al_cliente, "valor": valor - para_banco})
+        return lineas

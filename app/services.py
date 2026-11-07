@@ -402,3 +402,26 @@ class SiniestrosService:
 
     async def obtener(self, cliente_id: str, siniestro_id: str) -> dict:
         return await self._siniestros.obtener_siniestro(cliente_id, siniestro_id)
+
+
+class SiniestrosBackofficeService:
+    """Bandeja de siniestros del ``ADMIN`` (BITS-377). svc-core decide los estados y el pago; aquí
+    solo se pasan las llamadas y se pone como ``agente`` el correo de la sesión: nunca lo escribe
+    quien decide."""
+
+    def __init__(self, siniestros: SiniestrosPort) -> None:
+        self._siniestros = siniestros
+
+    async def bandeja(self, estado: str | None, automatico: bool | None) -> list[dict]:
+        return await self._siniestros.bandeja_siniestros(estado, automatico)
+
+    async def detalle(self, siniestro_id: str) -> dict:
+        return await self._siniestros.detalle_siniestro_interno(siniestro_id)
+
+    async def archivo(self, siniestro_id: str, archivo_id: str) -> tuple[bytes, str]:
+        return await self._siniestros.archivo_de_siniestro(siniestro_id, archivo_id)
+
+    async def decidir(self, agente: str, siniestro_id: str, decision: dict) -> dict:
+        return await self._siniestros.decidir_siniestro(
+            siniestro_id, {**decision, "agente": agente}
+        )

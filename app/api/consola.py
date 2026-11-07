@@ -16,17 +16,23 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from app.api.schemas import (
     CrearUsuarioRequest,
     CredencialesRequest,
+    DecidirSiniestroRequest,
+    EstadoSiniestro,
     RefrescoRequest,
     SesionConsolaOut,
+    SiniestroInternoOut,
+    SiniestroInternoResumenOut,
     UsuarioOut,
 )
 from app.consola import ConsolaService
 from app.domain import ClaimsConsola, NoAutorizado, Prohibido, RolConsola
+from app.logging_utils import sanear_para_log
+from app.services import SiniestrosBackofficeService
 
 logger = logging.getLogger("bff_web.api")
 
@@ -36,6 +42,13 @@ def get_consola(request: Request) -> ConsolaService:
 
 
 ConsolaDep = Annotated[ConsolaService, Depends(get_consola)]
+
+
+def get_siniestros_backoffice(request: Request) -> SiniestrosBackofficeService:
+    return request.app.state.siniestros_backoffice
+
+
+SiniestrosBackofficeDep = Annotated[SiniestrosBackofficeService, Depends(get_siniestros_backoffice)]
 
 
 def claims_consola_actuales(
@@ -103,6 +116,75 @@ async def crear_usuario(
         actor, payload.correo, payload.contrasena, RolConsola(payload.rol), payload.nombre
     )
     return UsuarioOut.model_validate(usuario)
+
+
+@backoffice_router.get(
+    "/siniestros", response_model=list[SiniestroInternoResumenOut], tags=["Backoffice"]
+)
+async def listar_bandeja_de_siniestros(
+    servicio: SiniestrosBackofficeDep,
+    estado: Annotated[EstadoSiniestro | None, Query()] = None,
+    automatico: Annotated[bool | None, Query()] = None,
+) -> list[SiniestroInternoResumenOut]:
+    logger.info("GET /v1/backoffice/siniestros: solicitud recibida")
+    siniestros = await servicio.bandeja(estado, automatico)
+    return [SiniestroInternoResumenOut.model_validate(s) for s in siniestros]
+
+
+@backoffice_router.get(
+    "/siniestros/{siniestro_id}", response_model=SiniestroInternoOut, tags=["Backoffice"]
+)
+async def obtener_siniestro_de_la_bandeja(
+    siniestro_id: str, servicio: SiniestrosBackofficeDep
+) -> SiniestroInternoOut:
+    logger.info(
+        "GET /v1/backoffice/siniestros/%s: solicitud recibida", sanear_para_log(siniestro_id)
+    )
+    return SiniestroInternoOut.model_validate(await servicio.detalle(siniestro_id))
+
+
+@backoffice_router.get(
+    "/siniestros/{siniestro_id}/evidencias/{evidencia_id}",
+    tags=["Backoffice"],
+    response_class=Response,
+    responses={200: {"content": {"image/jpeg": {}, "image/png": {}}}},
+)
+async def obtener_archivo_de_la_bandeja(
+    siniestro_id: str, evidencia_id: str, servicio: SiniestrosBackofficeDep
+) -> Response:
+    logger.info(
+        "GET /v1/backoffice/siniestros/%s/evidencias: solicitud recibida",
+        sanear_para_log(siniestro_id),
+    )
+    contenido, tipo = await servicio.archivo(siniestro_id, evidencia_id)
+    return Response(
+        content=contenido,
+        media_type=tipo,
+        headers={"Cache-Control": "no-store", "Content-Disposition": "inline"},
+    )
+
+
+@backoffice_router.post(
+    "/siniestros/{siniestro_id}/decisiones",
+    response_model=SiniestroInternoOut,
+    tags=["Backoffice"],
+)
+async def decidir_siniestro(
+    siniestro_id: str,
+    payload: DecidirSiniestroRequest,
+    servicio: SiniestrosBackofficeDep,
+    actor: Annotated[ClaimsConsola, Depends(requiere_admin)],
+) -> SiniestroInternoOut:
+    # El agente es el correo de la sesión y no se escribe en el log.
+    logger.info(
+        "POST /v1/backoffice/siniestros/%s/decisiones: solicitud recibida decision=%s",
+        sanear_para_log(siniestro_id),
+        payload.decision,
+    )
+    siniestro = await servicio.decidir(
+        actor.correo, siniestro_id, payload.model_dump(by_alias=True, exclude_none=True)
+    )
+    return SiniestroInternoOut.model_validate(siniestro)
 
 
 # --- Solo SOCIO ---
