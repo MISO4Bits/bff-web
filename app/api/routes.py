@@ -39,6 +39,8 @@ from app.api.schemas import (
     RegistroRequest,
     RegistroResponse,
     SesionOut,
+    SiniestroOut,
+    SiniestroResumenOut,
     SolicitarPolizaRequest,
     TipoDocumentoLegal,
     TipoEvidencia,
@@ -57,6 +59,7 @@ from app.services import (
     EvidenciasIdentidadService,
     OnboardingService,
     PolizasService,
+    SiniestrosService,
 )
 
 logger = logging.getLogger("bff_web.api")
@@ -89,6 +92,13 @@ def get_polizas(request: Request) -> PolizasService:
 
 
 PolizasDep = Annotated[PolizasService, Depends(get_polizas)]
+
+
+def get_siniestros(request: Request) -> SiniestrosService:
+    return request.app.state.siniestros
+
+
+SiniestrosDep = Annotated[SiniestrosService, Depends(get_siniestros)]
 
 
 def get_evidencias(request: Request) -> EvidenciasIdentidadService:
@@ -518,3 +528,27 @@ async def documento_de_mi_poliza(
         response.headers["Retry-After"] = str(REINTENTO_DOCUMENTO_S)
     response.headers["Cache-Control"] = "no-store"
     return DocumentoPolizaOut.model_validate(cuerpo)
+
+
+@router.get("/cuenta/siniestros", response_model=list[SiniestroResumenOut], tags=["Siniestros"])
+async def listar_mis_siniestros(
+    claims: ClaimsDep, service: SiniestrosDep, response: Response
+) -> list[SiniestroResumenOut]:
+    logger.info("GET /v1/cuenta/siniestros: solicitud recibida cliente_id=%s", claims.cliente_id)
+    siniestros = await service.listar(claims.cliente_id)
+    response.headers["Cache-Control"] = "no-store"
+    return [SiniestroResumenOut.model_validate(s) for s in siniestros]
+
+
+@router.get("/cuenta/siniestros/{siniestro_id}", response_model=SiniestroOut, tags=["Siniestros"])
+async def obtener_mi_siniestro(
+    siniestro_id: str, claims: ClaimsDep, service: SiniestrosDep, response: Response
+) -> SiniestroOut:
+    logger.info(
+        "GET /v1/cuenta/siniestros/%s: solicitud recibida cliente_id=%s",
+        sanear_para_log(siniestro_id),
+        claims.cliente_id,
+    )
+    siniestro = await service.obtener(claims.cliente_id, siniestro_id)
+    response.headers["Cache-Control"] = "no-store"
+    return SiniestroOut.model_validate(siniestro)

@@ -369,3 +369,66 @@ class DocumentoPolizaOut(_Respuesta):
     estado: Literal["GENERANDO", "LISTO"]
     url: str | None = None
     expira_en: datetime | None = None
+
+
+# --- Siniestros del cliente (BITS-383, BITS-384) ---
+
+TipoSiniestro = Literal["INCAPACIDAD_TOTAL", "INCENDIO_TERREMOTO", "SISMO_PARAMETRICO"]
+EstadoSiniestro = Literal["EN_ESTUDIO", "FALTA_INFORMACION", "PAGADO", "RECHAZADO"]
+
+
+class ArchivoSiniestroOut(_Model):
+    id: str
+    clase: Literal["FOTO", "DOCUMENTO"]
+    capturado_en: AwareDatetime | None = None
+    latitud: float | None = None
+    longitud: float | None = None
+    entregado_en: AwareDatetime
+
+
+class EvidenciaPedidaOut(_Model):
+    detalle: str
+    pedida_en: AwareDatetime
+
+
+class LineaPagoOut(_Model):
+    beneficiario: Literal["BANCO", "CLIENTE"]
+    valor: float
+    destino: str
+
+
+class PagoOut(_Model):
+    pagado_en: AwareDatetime
+    lineas: list[LineaPagoOut]
+
+
+class EventoSismoOut(_Model):
+    fecha: date
+    municipio: str
+    magnitud: float
+
+
+class SiniestroResumenOut(_Model):
+    id: str
+    numero: str
+    poliza_id: str
+    tipo: TipoSiniestro
+    automatico: bool
+    estado: EstadoSiniestro
+    reportado_en: AwareDatetime
+    actualizado_en: AwareDatetime
+
+
+class SiniestroOut(SiniestroResumenOut):
+    """El detalle que ve el cliente. svc-core no devuelve el saldo del crédito ni el destino del
+    pago: ahí está el número de cuenta."""
+
+    fecha_ocurrencia: date
+    narracion: str | None = None
+    ultima_entrega_en: AwareDatetime
+    fecha_limite: AwareDatetime | None = None
+    evidencia_pedida: EvidenciaPedidaOut | None = None
+    motivo_rechazo: str | None = None
+    pago: PagoOut | None = None
+    archivos: list[ArchivoSiniestroOut]
+    evento: EventoSismoOut | None = None

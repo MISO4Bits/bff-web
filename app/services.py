@@ -44,6 +44,7 @@ from app.ports import (
     EvidenciasIdentidadPort,
     IdentityProviderPort,
     PolizasPort,
+    SiniestrosPort,
 )
 from app.security import SessionIssuer
 
@@ -387,3 +388,17 @@ class PolizasService:
 
     async def documento(self, cliente_id: str, poliza_id: str) -> tuple[dict, bool]:
         return await self._polizas.documento(cliente_id, poliza_id)
+
+
+class SiniestrosService:
+    """Consulta de los siniestros del cliente. svc-core es el dueño del dominio y decide los
+    estados; aquí solo se pasan las llamadas con el ``clienteId`` del token."""
+
+    def __init__(self, siniestros: SiniestrosPort) -> None:
+        self._siniestros = siniestros
+
+    async def listar(self, cliente_id: str) -> list[dict]:
+        return await self._siniestros.listar_siniestros(cliente_id)
+
+    async def obtener(self, cliente_id: str, siniestro_id: str) -> dict:
+        return await self._siniestros.obtener_siniestro(cliente_id, siniestro_id)

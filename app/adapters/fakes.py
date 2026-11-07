@@ -597,3 +597,38 @@ class FakePolizas:
             "url": f"https://documentos.local/{poliza['numero']}.pdf",
             "expiraEn": datetime.now(UTC).isoformat(),
         }, True
+
+
+class FakeSiniestros:
+    """Siniestros en memoria con la forma que entrega svc-core. El portal web solo consulta, así
+    que no hay cómo crearlos desde aquí: ``sembrar`` deja uno ya armado, para pruebas y para el
+    front."""
+
+    _RESUMEN = (
+        "id",
+        "numero",
+        "polizaId",
+        "tipo",
+        "automatico",
+        "estado",
+        "reportadoEn",
+        "actualizadoEn",
+    )
+
+    def __init__(self) -> None:
+        self._items: dict[str, tuple[str, dict]] = {}
+
+    def sembrar(self, cliente_id: str, siniestro: dict) -> dict:
+        self._items[siniestro["id"]] = (cliente_id, siniestro)
+        return siniestro
+
+    async def listar_siniestros(self, cliente_id: str) -> list[dict]:
+        propios = [s for dueno, s in self._items.values() if dueno == cliente_id]
+        propios.sort(key=lambda s: s["reportadoEn"], reverse=True)
+        return [{c: s[c] for c in self._RESUMEN} for s in propios]
+
+    async def obtener_siniestro(self, cliente_id: str, siniestro_id: str) -> dict:
+        dueno, siniestro = self._items.get(siniestro_id, (None, {}))
+        if dueno != cliente_id:
+            raise RecursoNoEncontrado("Siniestro no encontrado")
+        return dict(siniestro)
