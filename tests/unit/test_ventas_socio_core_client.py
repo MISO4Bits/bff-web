@@ -171,7 +171,7 @@ def _servicio() -> VentasSocioService:
     )
 
 
-async def test_buscar_exige_un_criterio_completo_y_unico():
+async def test_buscar_exige_un_criterio_completo():
     servicio = _servicio()
 
     with pytest.raises(SolicitudInvalida):
@@ -179,7 +179,9 @@ async def test_buscar_exige_un_criterio_completo_y_unico():
     with pytest.raises(SolicitudInvalida):
         await servicio.buscar_cliente(correo=None, tipo_documento="CC", numero_documento=None)
     with pytest.raises(SolicitudInvalida):
-        await servicio.buscar_cliente(correo="a@b.co", tipo_documento="CC", numero_documento="1234")
+        await servicio.buscar_cliente(correo="a@b.co", tipo_documento="CC", numero_documento=None)
+    with pytest.raises(SolicitudInvalida):
+        await servicio.buscar_cliente(correo=None, tipo_documento=None, numero_documento="1234")
 
 
 async def test_el_socio_de_la_venta_lo_pone_el_servicio():

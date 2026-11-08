@@ -533,10 +533,14 @@ paths:
       tags: [Socio]
       summary: Busca al cliente al que se le va a vender
       description: |
-        Solo `SOCIO`. Por `correo` o por `tipoDocumento` y `numeroDocumento` juntos, nunca por los
-        dos a la vez. Devuelve lo mínimo para elegirlo: nombre, tipo de documento y **los últimos
-        cuatro dígitos** del documento. No devuelve correo, teléfono, fecha de nacimiento ni el
-        documento completo. `404` si no existe: se le da de alta con `POST /v1/socio/clientes`.
+        Solo `SOCIO`. Por `correo`, por `tipoDocumento` y `numeroDocumento` (siempre juntos) o por
+        los dos a la vez; `400` si no llega ninguno. Con correo y documento a la vez deben ser de
+        la misma cuenta: si son de cuentas distintas, o el correo es de una cuenta y el documento
+        no es de nadie, responde `409 CLIENTES_DISTINTOS` y `errores[0].campo` dice cuál choca.
+
+        Devuelve lo mínimo para elegirlo: nombre, tipo de documento y **los últimos cuatro
+        dígitos** del documento. No devuelve correo, teléfono, fecha de nacimiento ni el documento
+        completo. `404` si no existe: se le da de alta con `POST /v1/socio/clientes`.
       security:
         - consolaAuth: []
       parameters:
@@ -566,6 +570,11 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/ProblemaConsola' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: El correo y el documento son de cuentas distintas (`codigo = CLIENTES_DISTINTOS`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
         '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
     post:
       operationId: crearClienteDelSocio

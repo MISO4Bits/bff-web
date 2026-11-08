@@ -447,9 +447,9 @@ class VentasSocioService:
     async def buscar_cliente(
         self, *, correo: str | None, tipo_documento: str | None, numero_documento: str | None
     ) -> dict:
-        if correo is not None and (tipo_documento is not None or numero_documento is not None):
-            raise SolicitudInvalida("Busca por correo o por documento, no por los dos a la vez")
-        if correo is None and (tipo_documento is None or numero_documento is None):
+        if (tipo_documento is None) != (numero_documento is None):
+            raise SolicitudInvalida("El tipo y el número de documento van juntos")
+        if correo is None and tipo_documento is None:
             raise SolicitudInvalida("Indica el correo, o el tipo y el número de documento")
         cliente = await self._ventas.buscar_cliente(
             correo=correo, tipo_documento=tipo_documento, numero_documento=numero_documento

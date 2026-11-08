@@ -224,11 +224,11 @@ async def test_buscar_a_quien_no_existe_es_404(client, socio):
         {},
         {"tipoDocumento": "CC"},
         {"numeroDocumento": "52123456"},
-        {"correo": "a@b.co", "tipoDocumento": "CC", "numeroDocumento": "1234"},
+        {"correo": "a@b.co", "tipoDocumento": "CC"},
         {"tipoDocumento": "XX", "numeroDocumento": "1234"},
     ],
 )
-async def test_buscar_sin_dato_completo_o_mezclando_formas_es_400(client, socio, params):
+async def test_buscar_sin_dato_completo_es_400(client, socio, params):
     respuesta = await client.get("/v1/socio/clientes", params=params, headers=socio)
 
     assert respuesta.status_code == 400
@@ -435,3 +435,94 @@ async def test_vender_fuera_del_rango_de_edad_es_422(client, socio, app):
 
     assert respuesta.status_code == 422
     assert app.state.deps.ventas.ventas == []
+
+
+# --- correo y documento a la vez ---
+
+
+async def test_buscar_con_correo_y_documento_de_la_misma_cuenta(client, socio):
+    creado = await _crear_cliente(client, socio)
+
+    respuesta = await client.get(
+        "/v1/socio/clientes",
+        params={
+            "correo": CLIENTE["email"],
+            "tipoDocumento": "CC",
+            "numeroDocumento": CLIENTE["numeroDocumento"],
+        },
+        headers=socio,
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == creado
+
+
+async def test_correo_y_documento_de_cuentas_distintas_es_409(client, socio, openapi_spec):
+    await _crear_cliente(client, socio)
+    await _crear_cliente(
+        client,
+        socio,
+        numeroDocumento="80999888",
+        email="sofia.r@example.com",
+        primerNombre="Sofía",
+        primerApellido="Restrepo",
+    )
+
+    respuesta = await client.get(
+        "/v1/socio/clientes",
+        params={
+            "correo": "sofia.r@example.com",
+            "tipoDocumento": "CC",
+            "numeroDocumento": CLIENTE["numeroDocumento"],
+        },
+        headers=socio,
+    )
+
+    assert respuesta.status_code == 409
+    _validar(openapi_spec, "Problema", respuesta.json())
+    assert respuesta.json()["codigo"] == "CLIENTES_DISTINTOS"
+    assert respuesta.json()["errores"][0]["campo"] == "correo"
+
+
+async def test_un_correo_ajeno_con_un_documento_que_no_existe_es_409(client, socio):
+    await _crear_cliente(client, socio)
+
+    respuesta = await client.get(
+        "/v1/socio/clientes",
+        params={"correo": CLIENTE["email"], "tipoDocumento": "CC", "numeroDocumento": "11111111"},
+        headers=socio,
+    )
+
+    assert respuesta.status_code == 409
+    assert respuesta.json()["errores"][0]["campo"] == "documento"
+
+
+async def test_un_documento_conocido_con_otro_correo_devuelve_la_cuenta(client, socio):
+    creado = await _crear_cliente(client, socio)
+
+    respuesta = await client.get(
+        "/v1/socio/clientes",
+        params={
+            "correo": "otro@example.com",
+            "tipoDocumento": "CC",
+            "numeroDocumento": CLIENTE["numeroDocumento"],
+        },
+        headers=socio,
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == creado
+
+
+async def test_correo_y_documento_que_no_existen_es_404(client, socio):
+    respuesta = await client.get(
+        "/v1/socio/clientes",
+        params={
+            "correo": "nadie@example.com",
+            "tipoDocumento": "CC",
+            "numeroDocumento": "11111111",
+        },
+        headers=socio,
+    )
+
+    assert respuesta.status_code == 404

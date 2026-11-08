@@ -770,16 +770,46 @@ class FakeVentasSocio:
         self, *, correo: str | None, tipo_documento: str | None, numero_documento: str | None
     ) -> dict:
         self.llamadas.append(("buscar_cliente", correo, tipo_documento, numero_documento))
-        for cliente in self.clientes.values():
-            if correo is not None and cliente["email"].lower() == correo.strip().lower():
-                return cliente
-            if (
-                tipo_documento is not None
-                and cliente["tipoDocumento"] == tipo_documento
-                and cliente["numeroDocumento"] == numero_documento
-            ):
+        del_correo = next(
+            (
+                c
+                for c in self.clientes.values()
+                if correo is not None and c["email"].lower() == correo.strip().lower()
+            ),
+            None,
+        )
+        del_documento = next(
+            (
+                c
+                for c in self.clientes.values()
+                if tipo_documento is not None
+                and c["tipoDocumento"] == tipo_documento
+                and c["numeroDocumento"] == numero_documento
+            ),
+            None,
+        )
+        if correo is not None and tipo_documento is not None:
+            # Como svc-core: con los dos, deben ser de la misma cuenta.
+            if del_documento is not None and del_correo is not None:
+                if del_documento["id"] != del_correo["id"]:
+                    raise self._distintos("correo")
+                return del_documento
+            if del_documento is not None:
+                return del_documento
+            if del_correo is not None:
+                raise self._distintos("documento")
+        else:
+            cliente = del_correo if correo is not None else del_documento
+            if cliente is not None:
                 return cliente
         raise RecursoNoEncontrado("Cliente no encontrado")
+
+    @staticmethod
+    def _distintos(campo: str) -> Conflicto:
+        mensaje = "El correo y el documento son de cuentas distintas"
+        return Conflicto(
+            mensaje, errores=[{"campo": campo, "mensaje": mensaje}], codigo="CLIENTES_DISTINTOS"
+        )
 
     async def crear_cliente_asistido(self, cuerpo: dict, idempotency_key: str | None) -> dict:
         self.llamadas.append(("crear_cliente_asistido", cuerpo, idempotency_key))

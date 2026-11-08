@@ -166,7 +166,9 @@ class VentasSocioPort(Protocol):
     async def buscar_cliente(
         self, *, correo: str | None, tipo_documento: str | None, numero_documento: str | None
     ) -> dict:
-        """El cliente por correo o por documento. ``RecursoNoEncontrado`` si no existe."""
+        """El cliente por correo, por documento o por los dos (deben ser de la misma cuenta:
+        ``Conflicto`` con ``codigo = CLIENTES_DISTINTOS`` si no). ``RecursoNoEncontrado`` si no
+        existe."""
         ...
 
     async def crear_cliente_asistido(self, cuerpo: dict, idempotency_key: str | None) -> dict:
