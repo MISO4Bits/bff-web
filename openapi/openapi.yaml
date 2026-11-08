@@ -48,6 +48,8 @@ tags:
     description: Consulta de mis siniestros (BITS-383, BITS-384). El reporte y lo que falta se envían desde la app móvil.
   - name: Ingreso del personal
     description: Ingreso y refresco de la sesión del Backoffice para `ADMIN` y `SOCIO` (BITS-375).
+  - name: Socio
+    description: Venta directa del socio (BITS-378). Todas exigen una sesión del personal con rol `SOCIO`; el `socioId` de una venta es siempre el `uid` del token.
   - name: Backoffice
     description: Rutas del Backoffice. Todas exigen una sesión del personal con rol `ADMIN`, salvo el ingreso y el refresco (`/v1/backoffice/sesiones*`).
 security:
@@ -494,6 +496,204 @@ paths:
               schema: { $ref: '#/components/schemas/ProblemaConsola' }
         '409': { $ref: '#/components/responses/Conflicto' }
         '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
+
+  /v1/socio/entidades-financieras:
+    get:
+      operationId: listarEntidadesDelSocio
+      tags: [Socio]
+      summary: Bancos del mercado, para elegir el que aprobó el crédito
+      description: |
+        Solo `SOCIO`. La misma lista que ve el cliente al cotizar, sin las hipotecas de nadie.
+      security:
+        - consolaAuth: []
+      parameters:
+        - name: mercado
+          in: query
+          required: false
+          schema: { type: string, enum: [CO], default: CO }
+      responses:
+        '200':
+          description: Entidades del mercado.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EntidadFinanciera' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '403':
+          description: La sesión no es de un `SOCIO` (`codigo = ROL_NO_PERMITIDO`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemaConsola' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
+
+  /v1/socio/clientes:
+    get:
+      operationId: buscarClienteDelSocio
+      tags: [Socio]
+      summary: Busca al cliente al que se le va a vender
+      description: |
+        Solo `SOCIO`. Por `correo`, por `tipoDocumento` y `numeroDocumento` (siempre juntos) o por
+        los dos a la vez; `400` si no llega ninguno. Con correo y documento a la vez deben ser de
+        la misma cuenta: si son de cuentas distintas, o el correo es de una cuenta y el documento
+        no es de nadie, responde `409 CLIENTES_DISTINTOS` y `errores[0].campo` dice cuál choca.
+
+        Devuelve lo mínimo para elegirlo: nombre, tipo de documento y **los últimos cuatro
+        dígitos** del documento. No devuelve correo, teléfono, fecha de nacimiento ni el documento
+        completo. `404` si no existe: se le da de alta con `POST /v1/socio/clientes`.
+      security:
+        - consolaAuth: []
+      parameters:
+        - name: correo
+          in: query
+          required: false
+          schema: { type: string, maxLength: 254 }
+        - name: tipoDocumento
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/TipoDocumento' }
+        - name: numeroDocumento
+          in: query
+          required: false
+          schema: { type: string, minLength: 4, maxLength: 20 }
+      responses:
+        '200':
+          description: Cliente encontrado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClienteSocio' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '403':
+          description: La sesión no es de un `SOCIO` (`codigo = ROL_NO_PERMITIDO`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemaConsola' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: El correo y el documento son de cuentas distintas (`codigo = CLIENTES_DISTINTOS`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
+    post:
+      operationId: crearClienteDelSocio
+      tags: [Socio]
+      summary: Da de alta al cliente al que se le va a vender
+      description: |
+        Solo `SOCIO`. Crea la cuenta del cliente con el correo ya verificado y una contraseña
+        temporal que el sistema genera y manda **al correo del cliente** (el socio no la ve), y lo
+        registra sin ninguna autorización de datos: el cliente las otorga después, él mismo.
+
+        `409` si el correo o el documento ya existen (`errores[0].campo` dice cuál): se busca al
+        cliente con `GET /v1/socio/clientes`. Con `Idempotency-Key`, un reintento devuelve el
+        mismo cliente sin crear otra cuenta ni mandar otro correo.
+      security:
+        - consolaAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CrearClienteSocioRequest' }
+      responses:
+        '201':
+          description: Cliente creado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClienteSocio' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '403':
+          description: La sesión no es de un `SOCIO` (`codigo = ROL_NO_PERMITIDO`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemaConsola' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '503': { $ref: '#/components/responses/DependenciaNoDisponible' }
+
+  /v1/socio/ventas/precio:
+    post:
+      operationId: calcularPrecioDeVenta
+      tags: [Socio]
+      summary: Precio del seguro para el crédito de un cliente
+      description: |
+        Solo `SOCIO`. **No guarda nada**: no crea cotización ni solicitud, y no toca las que el
+        cliente tenga por su cuenta. El crédito es nuevo, así que el saldo es el valor. La edad sale
+        de la fecha de nacimiento del cliente. Trae Vida (obligatoria) y Hogar (opcional) con su
+        precio mensual.
+
+        `422 FUERA_DE_RANGO` si el cliente no tiene entre 18 y 65 años o el crédito termina después
+        de los 75. `403 CLIENTE_NO_ACTIVO` si el cliente no está activo.
+      security:
+        - consolaAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PrecioVentaRequest' }
+      responses:
+        '200':
+          description: El precio calculado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PrecioVenta' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '403':
+          description: La sesión no es de un `SOCIO` (`ROL_NO_PERMITIDO`) o el cliente no está activo (`CLIENTE_NO_ACTIVO`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemaPoliza' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/FueraDeRango' }
+        '503': { $ref: '#/components/responses/NoDisponible' }
+
+  /v1/socio/ventas:
+    post:
+      operationId: venderPoliza
+      tags: [Socio]
+      summary: Vende y emite la póliza a nombre del cliente
+      description: |
+        Solo `SOCIO`. Emite **al instante**, sin solicitud ni pendientes: el socio verificó al
+        cliente cara a cara y el banco ya aprobó el crédito. El precio se calcula de nuevo con la
+        tarifa del momento. Las condiciones de la póliza se aceptan en su versión vigente. El
+        `socioId` es siempre el del token: no se puede vender a nombre de otro socio.
+
+        **`Idempotency-Key` es obligatorio** (`400` sin él): un reintento con la misma clave
+        devuelve la misma póliza y no emite otra. El cliente recibe el aviso de la venta y, cuando
+        el documento está listo, la póliza por correo.
+      security:
+        - consolaAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Una clave por intento de venta; se reutiliza solo al reintentar ese intento.
+          schema: { type: string, minLength: 1, maxLength: 64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VentaRequest' }
+      responses:
+        '201':
+          description: Póliza emitida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Venta' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '403':
+          description: La sesión no es de un `SOCIO` (`ROL_NO_PERMITIDO`) o el cliente no está activo (`CLIENTE_NO_ACTIVO`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemaPoliza' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/ConflictoPoliza' }
+        '422': { $ref: '#/components/responses/FueraDeRango' }
+        '503': { $ref: '#/components/responses/NoDisponible' }
 
   /v1/cuenta/siniestros:
     get:
@@ -1382,6 +1582,90 @@ components:
             Productos, igual que las versiones de política del registro.
 
             '
+    ClienteSocio:
+      type: object
+      additionalProperties: false
+      required: [id, nombre, tipoDocumento, ultimosDigitosDocumento, estado]
+      properties:
+        id: { type: string }
+        nombre: { type: string }
+        tipoDocumento: { $ref: '#/components/schemas/TipoDocumento' }
+        ultimosDigitosDocumento: { type: string, minLength: 1, maxLength: 4 }
+        estado: { $ref: '#/components/schemas/EstadoCliente' }
+    CrearClienteSocioRequest:
+      type: object
+      additionalProperties: false
+      required: [tipoDocumento, numeroDocumento, primerNombre, primerApellido, fechaNacimiento, email, telefono]
+      properties:
+        tipoDocumento: { $ref: '#/components/schemas/TipoDocumento' }
+        numeroDocumento: { type: string, minLength: 4, maxLength: 20, pattern: '^[0-9A-Za-z-]+$' }
+        primerNombre: { type: string, minLength: 1, maxLength: 60 }
+        segundoNombre: { type: [string, 'null'], maxLength: 60 }
+        primerApellido: { type: string, minLength: 1, maxLength: 60 }
+        segundoApellido: { type: [string, 'null'], maxLength: 60 }
+        fechaNacimiento: { type: string, format: date }
+        email: { type: string, format: email, maxLength: 254 }
+        telefono: { type: string, pattern: '^\+?[0-9]{7,15}$' }
+    PrecioVentaRequest:
+      type: object
+      additionalProperties: false
+      required: [clienteId, valorCredito, plazoRestanteMeses, entidadAcreedora]
+      properties:
+        clienteId: { type: string, minLength: 1, maxLength: 64 }
+        valorCredito: { type: number, minimum: 10000000, description: El crédito es nuevo, así que el saldo es este valor. }
+        plazoRestanteMeses: { type: integer, minimum: 1, maximum: 480 }
+        entidadAcreedora: { type: string, minLength: 2, maxLength: 80, description: Nombre del banco, de `GET /v1/socio/entidades-financieras`. }
+    VentaRequest:
+      type: object
+      additionalProperties: false
+      required: [clienteId, valorCredito, plazoRestanteMeses, entidadAcreedora, coberturas, cuotaMensual, direccion, municipio]
+      properties:
+        clienteId: { type: string, minLength: 1, maxLength: 64 }
+        valorCredito: { type: number, minimum: 10000000 }
+        plazoRestanteMeses: { type: integer, minimum: 1, maximum: 480 }
+        entidadAcreedora: { type: string, minLength: 2, maxLength: 80 }
+        coberturas:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items: { $ref: '#/components/schemas/CodigoCobertura' }
+          description: Debe incluir `VIDA`.
+        cuotaMensual: { type: number, exclusiveMinimum: 0, description: Cuota mensual del crédito. }
+        direccion: { type: string, minLength: 1, maxLength: 200, description: Dirección del inmueble. }
+        municipio: { type: string, minLength: 1, maxLength: 200 }
+    PrecioVenta:
+      type: object
+      additionalProperties: false
+      required: [edad, datosCredito, origenDatos, coberturaMeses, coberturas, vigenciaCotizacion, creadaEn]
+      properties:
+        edad: { type: integer }
+        datosCredito: { $ref: '#/components/schemas/DatosCredito' }
+        origenDatos: { $ref: '#/components/schemas/OrigenDatos' }
+        coberturaMeses: { type: integer }
+        coberturas:
+          type: array
+          items: { $ref: '#/components/schemas/CoberturaContratada' }
+        vigenciaCotizacion: { $ref: '#/components/schemas/Vigencia' }
+        creadaEn: { type: string, format: date-time }
+    DatosVenta:
+      type: object
+      additionalProperties: false
+      required: [direccion, municipio, cuotaMensual]
+      properties:
+        direccion: { type: string }
+        municipio: { type: string }
+        cuotaMensual: { type: number }
+    Venta:
+      description: La póliza emitida, con quién la vendió y lo que el socio capturó.
+      unevaluatedProperties: false
+      allOf:
+      - $ref: '#/components/schemas/Poliza'
+      - type: object
+        required: [clienteId, socioId, datosVenta]
+        properties:
+          clienteId: { type: string }
+          socioId: { type: string }
+          datosVenta: { $ref: '#/components/schemas/DatosVenta' }
     ProblemaConsola:
       allOf:
       - $ref: '#/components/schemas/Problema'
@@ -1447,6 +1731,7 @@ components:
             - SOLICITUD_VENCIDA
             - PENDIENTE_NO_APLICA
             - DOCUMENTO_NO_DISPONIBLE
+            - DOCUMENTOS_LEGALES_NO_DISPONIBLES
     Poliza:
       type: object
       required:

@@ -307,6 +307,65 @@ class CoreClientAdapter:
         logger.info("decisión sobre siniestro enviada decision=%s", cuerpo.get("decision"))
         return resp.json()
 
+    # --- venta directa del socio (BITS-378) ---
+
+    async def buscar_cliente(
+        self, *, correo: str | None, tipo_documento: str | None, numero_documento: str | None
+    ) -> dict:
+        params = {
+            nombre: valor
+            for nombre, valor in (
+                ("correo", correo),
+                ("tipoDocumento", tipo_documento),
+                ("numeroDocumento", numero_documento),
+            )
+            if valor is not None
+        }
+        resp = await self._http.request("GET", CLIENTES, params=params)
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    async def crear_cliente_asistido(self, cuerpo: dict, idempotency_key: str | None) -> dict:
+        # Sin reintentos: crear la cuenta no se repite a ciegas. Se espera a Identity Platform.
+        resp = await self._http.request(
+            "POST",
+            f"{CLIENTES}/asistidos",
+            json=cuerpo,
+            headers={"Idempotency-Key": idempotency_key} if idempotency_key else None,
+            reintentos=0,
+            timeout=self._timeout_cuentas,
+        )
+        if resp.status_code == 409:
+            campo = _campo_en_conflicto(resp)
+            logger.info("alta asistida en conflicto campo=%s", campo)
+            raise Conflicto.por_campo(campo)
+        _asegurar_poliza_ok(resp)
+        # Ni el correo ni el documento se escriben en el log.
+        logger.info("cliente asistido creado")
+        return resp.json()
+
+    async def calcular_precio(self, cuerpo: dict) -> dict:
+        resp = await self._http.request(
+            "POST", "/v1/polizas/precio", json=cuerpo, timeout=self._timeout_polizas
+        )
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    async def vender(self, cuerpo: dict, idempotency_key: str | None) -> dict:
+        # Sin reintentos: emitir no se repite a ciegas. El reintento lo hace quien llama, con la
+        # misma Idempotency-Key.
+        resp = await self._http.request(
+            "POST",
+            "/v1/polizas",
+            json=cuerpo,
+            headers={"Idempotency-Key": idempotency_key} if idempotency_key else None,
+            reintentos=0,
+            timeout=self._timeout_cuentas,
+        )
+        _asegurar_poliza_ok(resp)
+        logger.info("póliza vendida por un socio")
+        return resp.json()
+
     # --- pólizas (BITS-101) ---
 
     async def solicitar(self, cliente_id: str, cuerpo: dict) -> tuple[dict, bool]:

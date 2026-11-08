@@ -14,25 +14,32 @@ portal del cliente. Tres prefijos, cada uno con su regla:
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from app.api.schemas import (
+    ClienteSocioOut,
+    CrearClienteSocioRequest,
     CrearUsuarioRequest,
     CredencialesRequest,
     DecidirSiniestroRequest,
+    EntidadFinancieraOut,
     EstadoSiniestro,
+    PrecioVentaOut,
+    PrecioVentaRequest,
     RefrescoRequest,
     SesionConsolaOut,
     SiniestroInternoOut,
     SiniestroInternoResumenOut,
     UsuarioOut,
+    VentaOut,
+    VentaRequest,
 )
 from app.consola import ConsolaService
-from app.domain import ClaimsConsola, NoAutorizado, Prohibido, RolConsola
+from app.domain import ClaimsConsola, NoAutorizado, Prohibido, RolConsola, SolicitudInvalida
 from app.logging_utils import sanear_para_log
-from app.services import SiniestrosBackofficeService
+from app.services import SiniestrosBackofficeService, VentasSocioService
 
 logger = logging.getLogger("bff_web.api")
 
@@ -61,6 +68,13 @@ def claims_consola_actuales(
 
 
 ClaimsConsolaDep = Annotated[ClaimsConsola, Depends(claims_consola_actuales)]
+
+
+def get_ventas_socio(request: Request) -> VentasSocioService:
+    return request.app.state.ventas_socio
+
+
+VentasSocioDep = Annotated[VentasSocioService, Depends(get_ventas_socio)]
 
 
 def exigir_rol(rol: RolConsola):
@@ -189,10 +203,80 @@ async def decidir_siniestro(
 
 # --- Solo SOCIO ---
 
-# Todavía sin rutas (las ventas del socio llegan con BITS-378): el router ya exige el rol, así que
-# cada ruta que se le agregue queda protegida.
+# La regla está en el router: cada ruta que se le agregue queda protegida. El `socioId` de una venta
+# es siempre el `uid` de la sesión.
 socio_router = APIRouter(
     prefix="/v1/socio",
     tags=["Socio"],
     dependencies=[Depends(requiere_socio)],
 )
+
+
+@socio_router.get("/entidades-financieras", response_model=list[EntidadFinancieraOut])
+async def listar_entidades_del_socio(
+    servicio: VentasSocioDep, mercado: Annotated[Literal["CO"], Query()] = "CO"
+) -> list[EntidadFinancieraOut]:
+    logger.info("GET /v1/socio/entidades-financieras: solicitud recibida mercado=%s", mercado)
+    entidades = await servicio.entidades(mercado)
+    return [EntidadFinancieraOut(id=e.id, nombre=e.nombre) for e in entidades]
+
+
+@socio_router.get("/clientes", response_model=ClienteSocioOut)
+async def buscar_cliente_del_socio(
+    servicio: VentasSocioDep,
+    correo: Annotated[str | None, Query(max_length=254)] = None,
+    tipo_documento: Annotated[
+        Literal["CC", "CE", "PA"] | None, Query(alias="tipoDocumento")
+    ] = None,
+    numero_documento: Annotated[
+        str | None, Query(alias="numeroDocumento", min_length=4, max_length=20)
+    ] = None,
+) -> ClienteSocioOut:
+    # Ni el correo ni el documento buscados se escriben en el log.
+    logger.info("GET /v1/socio/clientes: solicitud recibida")
+    cliente = await servicio.buscar_cliente(
+        correo=correo, tipo_documento=tipo_documento, numero_documento=numero_documento
+    )
+    return ClienteSocioOut.model_validate(cliente)
+
+
+@socio_router.post("/clientes", response_model=ClienteSocioOut, status_code=status.HTTP_201_CREATED)
+async def crear_cliente_del_socio(
+    payload: CrearClienteSocioRequest,
+    servicio: VentasSocioDep,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=64)] = None,
+) -> ClienteSocioOut:
+    logger.info("POST /v1/socio/clientes: solicitud recibida")
+    cliente = await servicio.crear_cliente(
+        payload.model_dump(mode="json", by_alias=True, exclude_none=True), idempotency_key
+    )
+    return ClienteSocioOut.model_validate(cliente)
+
+
+@socio_router.post("/ventas/precio", response_model=PrecioVentaOut)
+async def calcular_precio_de_venta(
+    payload: PrecioVentaRequest, servicio: VentasSocioDep
+) -> PrecioVentaOut:
+    logger.info("POST /v1/socio/ventas/precio: solicitud recibida")
+    precio = await servicio.calcular_precio(payload.model_dump(mode="json", by_alias=True))
+    return PrecioVentaOut.model_validate(precio)
+
+
+@socio_router.post("/ventas", response_model=VentaOut, status_code=status.HTTP_201_CREATED)
+async def vender_poliza(
+    payload: VentaRequest,
+    servicio: VentasSocioDep,
+    socio: Annotated[ClaimsConsola, Depends(requiere_socio)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=64)] = None,
+) -> VentaOut:
+    if not idempotency_key or not idempotency_key.strip():
+        # Emitir cobra a nombre de alguien: sin clave un doble clic emitiría dos pólizas.
+        raise SolicitudInvalida(
+            "Falta el encabezado Idempotency-Key",
+            errores=[{"campo": "Idempotency-Key", "mensaje": "Es obligatorio para vender"}],
+        )
+    logger.info("POST /v1/socio/ventas: solicitud recibida socio_id=%s", sanear_para_log(socio.uid))
+    poliza = await servicio.vender(
+        socio.uid, payload.model_dump(mode="json", by_alias=True), idempotency_key
+    )
+    return VentaOut.model_validate(poliza)

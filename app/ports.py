@@ -159,6 +159,34 @@ class PolizasPort(Protocol):
 
 
 @runtime_checkable
+class VentasSocioPort(Protocol):
+    """Venta directa del socio en svc-core (BITS-378). Devuelve el cuerpo tal cual lo entrega
+    svc-core; los errores salen como ``BffError`` con su ``codigo``."""
+
+    async def buscar_cliente(
+        self, *, correo: str | None, tipo_documento: str | None, numero_documento: str | None
+    ) -> dict:
+        """El cliente por correo, por documento o por los dos (deben ser de la misma cuenta:
+        ``Conflicto`` con ``codigo = CLIENTES_DISTINTOS`` si no). ``RecursoNoEncontrado`` si no
+        existe."""
+        ...
+
+    async def crear_cliente_asistido(self, cuerpo: dict, idempotency_key: str | None) -> dict:
+        """Da de alta al cliente con cuenta y correo confirmado. ``Conflicto`` (con el campo)
+        si el correo o el documento ya existen."""
+        ...
+
+    async def calcular_precio(self, cuerpo: dict) -> dict:
+        """El precio del seguro para el crédito, sin guardar nada. ``ReglaNegocio`` si el cliente
+        queda fuera del rango de edad."""
+        ...
+
+    async def vender(self, cuerpo: dict, idempotency_key: str | None) -> dict:
+        """Emite la póliza al instante. El ``cuerpo`` lleva el ``socioId`` de la sesión."""
+        ...
+
+
+@runtime_checkable
 class SiniestrosPort(Protocol):
     """Siniestros del cliente en svc-core (BITS-383, BITS-384). Devuelve el cuerpo tal cual lo
     entrega svc-core (ya validado allá); los errores salen como ``BffError`` con su ``codigo``.

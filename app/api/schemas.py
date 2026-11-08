@@ -488,3 +488,66 @@ class SiniestroInternoOut(SiniestroOut):
     saldo_credito: SaldoCreditoOut
     destino_pago: dict | None = None
     decisiones: list[DecisionSiniestroOut]
+
+
+# --- Venta directa del socio (BITS-378) ---
+
+
+class ClienteSocioOut(_Respuesta):
+    """Lo mínimo del cliente para que el socio lo elija: sin correo, teléfono ni documento."""
+
+    id: str
+    nombre: str
+    tipo_documento: Literal["CC", "CE", "PA"]
+    ultimos_digitos_documento: str
+    estado: Literal["ACTIVO", "BLOQUEADO", "INACTIVO"]
+
+
+class CrearClienteSocioRequest(_Model):
+    tipo_documento: Literal["CC", "CE", "PA"]
+    numero_documento: str = Field(min_length=4, max_length=20, pattern=_DOCUMENTO)
+    primer_nombre: str = Field(min_length=1, max_length=60)
+    segundo_nombre: str | None = Field(default=None, max_length=60)
+    primer_apellido: str = Field(min_length=1, max_length=60)
+    segundo_apellido: str | None = Field(default=None, max_length=60)
+    fecha_nacimiento: date
+    email: str = Field(max_length=254, pattern=_EMAIL)
+    telefono: str = Field(pattern=_TELEFONO)
+
+
+class PrecioVentaRequest(_Model):
+    """El crédito que el banco aprobó. Es nuevo: el saldo es el valor."""
+
+    cliente_id: str = Field(min_length=1, max_length=64)
+    valor_credito: Decimal = Field(ge=10_000_000, le=Decimal("1e12"))
+    plazo_restante_meses: int = Field(ge=1, le=480)
+    entidad_acreedora: str = Field(min_length=2, max_length=80)
+
+
+class VentaRequest(PrecioVentaRequest):
+    coberturas: list[CodigoCobertura] = Field(min_length=1, max_length=2)
+    cuota_mensual: Decimal = Field(gt=0, le=Decimal("1e12"))
+    direccion: str = Field(min_length=1, max_length=200)
+    municipio: str = Field(min_length=1, max_length=200)
+
+
+class PrecioVentaOut(_Respuesta):
+    edad: int
+    datos_credito: DatosCreditoPolizaOut
+    origen_datos: Literal["CONFIRMADO", "DECLARADO"]
+    cobertura_meses: int
+    coberturas: list[CoberturaContratadaOut]
+    vigencia_cotizacion: VigenciaPolizaOut
+    creada_en: datetime
+
+
+class DatosVentaOut(_Respuesta):
+    direccion: str
+    municipio: str
+    cuota_mensual: float
+
+
+class VentaOut(PolizaOut):
+    cliente_id: str
+    socio_id: str
+    datos_venta: DatosVentaOut

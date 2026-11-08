@@ -45,6 +45,7 @@ from app.ports import (
     IdentityProviderPort,
     PolizasPort,
     SiniestrosPort,
+    VentasSocioPort,
 )
 from app.security import SessionIssuer
 
@@ -333,6 +334,10 @@ class CreditosHipotecariosService:
             reportados.estado, tuple(creditos), tuple(entidades), reportados.fecha_consulta
         )
 
+    async def listar_entidades(self, mercado: str) -> tuple[EntidadFinanciera, ...]:
+        """Los bancos del mercado (con la caché de siempre), sin las hipotecas de nadie."""
+        return await self._entidades_del_mercado(mercado)
+
     async def _entidades_del_mercado(self, mercado: str) -> tuple[EntidadFinanciera, ...]:
         guardada = self._cache.get(mercado)
         ahora = self._reloj()
@@ -425,3 +430,60 @@ class SiniestrosBackofficeService:
         return await self._siniestros.decidir_siniestro(
             siniestro_id, {**decision, "agente": agente}
         )
+
+
+class VentasSocioService:
+    """Venta directa del socio (BITS-378). svc-core es el dueño del dominio; aquí solo se pasan las
+    llamadas, se pone como ``socioId`` el ``uid`` de la sesión (nunca lo escribe quien vende) y se
+    deja al socio ver lo mínimo del cliente que busca."""
+
+    def __init__(self, ventas: VentasSocioPort, creditos: CreditosHipotecariosService) -> None:
+        self._ventas = ventas
+        self._creditos = creditos
+
+    async def entidades(self, mercado: str) -> tuple[EntidadFinanciera, ...]:
+        return await self._creditos.listar_entidades(mercado)
+
+    async def buscar_cliente(
+        self, *, correo: str | None, tipo_documento: str | None, numero_documento: str | None
+    ) -> dict:
+        if (tipo_documento is None) != (numero_documento is None):
+            raise SolicitudInvalida("El tipo y el número de documento van juntos")
+        if correo is None and tipo_documento is None:
+            raise SolicitudInvalida("Indica el correo, o el tipo y el número de documento")
+        cliente = await self._ventas.buscar_cliente(
+            correo=correo, tipo_documento=tipo_documento, numero_documento=numero_documento
+        )
+        return vista_de_cliente(cliente)
+
+    async def crear_cliente(self, cuerpo: dict, idempotency_key: str | None) -> dict:
+        return vista_de_cliente(await self._ventas.crear_cliente_asistido(cuerpo, idempotency_key))
+
+    async def calcular_precio(self, cuerpo: dict) -> dict:
+        return await self._ventas.calcular_precio(cuerpo)
+
+    async def vender(self, socio_id: str, cuerpo: dict, idempotency_key: str) -> dict:
+        return await self._ventas.vender({**cuerpo, "socioId": socio_id}, idempotency_key)
+
+
+def vista_de_cliente(cliente: dict) -> dict:
+    """Lo que el socio necesita para elegir al cliente: nombre, tipo de documento y los últimos
+    cuatro dígitos para distinguir homónimos. No lleva correo, teléfono, fecha de nacimiento ni el
+    documento completo."""
+    nombre = " ".join(
+        p
+        for p in (
+            cliente["primerNombre"],
+            cliente.get("segundoNombre"),
+            cliente["primerApellido"],
+            cliente.get("segundoApellido"),
+        )
+        if p
+    )
+    return {
+        "id": cliente["id"],
+        "nombre": nombre,
+        "tipoDocumento": cliente["tipoDocumento"],
+        "ultimosDigitosDocumento": cliente["numeroDocumento"][-4:],
+        "estado": cliente["estado"],
+    }

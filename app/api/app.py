@@ -24,6 +24,7 @@ from app.services import (
     PolizasService,
     SiniestrosBackofficeService,
     SiniestrosService,
+    VentasSocioService,
 )
 from app.telemetry import agregar_encabezado_trace_id, setup_telemetry, shutdown_telemetry
 
@@ -47,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     siniestros = SiniestrosService(deps.siniestros)
     siniestros_backoffice = SiniestrosBackofficeService(deps.siniestros)
     consola = ConsolaService(deps.identity, deps.cuentas_internas, deps.consola_sessions)
+    ventas_socio = VentasSocioService(deps.ventas, creditos)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -68,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.siniestros_backoffice = siniestros_backoffice
     app.state.sessions = deps.sessions
     app.state.consola = consola
+    app.state.ventas_socio = ventas_socio
     app.state.consola_sessions = deps.consola_sessions
 
     install_error_handlers(app)
