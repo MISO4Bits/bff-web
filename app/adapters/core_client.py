@@ -34,6 +34,8 @@ logger = logging.getLogger("bff_web.adapters.core")
 CLIENTES = "/v1/clientes"
 USUARIOS_INTERNOS = "/v1/usuarios-internos"
 SINIESTROS = "/v1/siniestros"
+POLIZAS = "/v1/polizas"
+EVIDENCIAS = "/v1/evidencias-identidad"
 
 
 class CoreClientAdapter:
@@ -305,6 +307,56 @@ class CoreClientAdapter:
         _asegurar_poliza_ok(resp)
         # Ni el agente (su correo) ni el valor se escriben en el log.
         logger.info("decisión sobre siniestro enviada decision=%s", cuerpo.get("decision"))
+        return resp.json()
+
+    # --- solicitudes en revisión del ADMIN (BITS-376) ---
+
+    async def listar_solicitudes(self, limite: int, cursor: str | None) -> dict:
+        params = {
+            "estado": "PENDIENTE",
+            "tipoPendiente": "AGENTE",
+            "orden": "creadaEn",
+            "limite": str(limite),
+        }
+        if cursor:
+            params["cursor"] = cursor
+        resp = await self._http.request("GET", POLIZAS, params=params)
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    async def obtener_solicitud(self, poliza_id: str) -> dict:
+        resp = await self._http.request(
+            "GET", f"{POLIZAS}/{quote(poliza_id, safe='')}", timeout=self._timeout_polizas
+        )
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    async def obtener_cliente_de_solicitud(self, cliente_id: str) -> dict:
+        resp = await self._http.request("GET", f"{CLIENTES}/{quote(cliente_id, safe='')}")
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
+    async def imagen_de_evidencia(self, evidencia_id: str) -> tuple[bytes, str]:
+        resp = await self._http.request(
+            "GET",
+            f"{EVIDENCIAS}/{quote(evidencia_id, safe='')}/imagen",
+            timeout=self._timeout_subida,
+        )
+        _asegurar_poliza_ok(resp)
+        return resp.content, resp.headers.get("content-type", "application/octet-stream")
+
+    async def decidir_solicitud(self, poliza_id: str, cuerpo: dict) -> dict:
+        # Sin reintentos: aprobar el último pendiente emite la póliza (evaluación, base y evento).
+        resp = await self._http.request(
+            "POST",
+            f"{POLIZAS}/{quote(poliza_id, safe='')}/decisiones",
+            json=cuerpo,
+            reintentos=0,
+            timeout=self._timeout_polizas,
+        )
+        _asegurar_poliza_ok(resp)
+        # El agente (su correo) no se escribe en el log.
+        logger.info("decisión sobre solicitud enviada decision=%s", cuerpo.get("decision"))
         return resp.json()
 
     # --- venta directa del socio (BITS-378) ---

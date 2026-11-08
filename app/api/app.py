@@ -24,6 +24,7 @@ from app.services import (
     PolizasService,
     SiniestrosBackofficeService,
     SiniestrosService,
+    SolicitudesBackofficeService,
     VentasSocioService,
 )
 from app.telemetry import agregar_encabezado_trace_id, setup_telemetry, shutdown_telemetry
@@ -47,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     polizas = PolizasService(deps.polizas)
     siniestros = SiniestrosService(deps.siniestros)
     siniestros_backoffice = SiniestrosBackofficeService(deps.siniestros)
+    solicitudes_backoffice = SolicitudesBackofficeService(deps.solicitudes)
     consola = ConsolaService(deps.identity, deps.cuentas_internas, deps.consola_sessions)
     ventas_socio = VentasSocioService(deps.ventas, creditos)
 
@@ -68,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.polizas = polizas
     app.state.siniestros = siniestros
     app.state.siniestros_backoffice = siniestros_backoffice
+    app.state.solicitudes_backoffice = solicitudes_backoffice
     app.state.sessions = deps.sessions
     app.state.consola = consola
     app.state.ventas_socio = ventas_socio

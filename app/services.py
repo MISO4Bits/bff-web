@@ -45,6 +45,7 @@ from app.ports import (
     IdentityProviderPort,
     PolizasPort,
     SiniestrosPort,
+    SolicitudesBackofficePort,
     VentasSocioPort,
 )
 from app.security import SessionIssuer
@@ -429,6 +430,59 @@ class SiniestrosBackofficeService:
     async def decidir(self, agente: str, siniestro_id: str, decision: dict) -> dict:
         return await self._siniestros.decidir_siniestro(
             siniestro_id, {**decision, "agente": agente}
+        )
+
+
+def vista_de_cliente_de_solicitud(cliente: dict) -> dict:
+    """Lo que el ``ADMIN`` ve del cliente de una solicitud: quién es y su documento completo (lo
+    necesita para validar la identidad contra la cédula). Nunca correo ni teléfono."""
+    nombre = " ".join(
+        parte
+        for parte in (
+            cliente.get("primerNombre"),
+            cliente.get("segundoNombre"),
+            cliente.get("primerApellido"),
+            cliente.get("segundoApellido"),
+        )
+        if parte
+    )
+    return {
+        "id": cliente["id"],
+        "nombre": nombre,
+        "tipoDocumento": cliente["tipoDocumento"],
+        "numeroDocumento": cliente["numeroDocumento"],
+    }
+
+
+class SolicitudesBackofficeService:
+    """Solicitudes en revisión del ``ADMIN`` (BITS-376). svc-core decide los estados y emite la
+    póliza; aquí se pasan las llamadas, se arma el detalle con el cliente, se comprueba que una
+    imagen sea de la solicitud que se revisa y se pone como ``agente`` el correo de la sesión:
+    nunca lo escribe quien decide."""
+
+    def __init__(self, solicitudes: SolicitudesBackofficePort) -> None:
+        self._solicitudes = solicitudes
+
+    async def bandeja(self, limite: int, cursor: str | None) -> dict:
+        return await self._solicitudes.listar_solicitudes(limite, cursor)
+
+    async def detalle(self, poliza_id: str) -> dict:
+        poliza = await self._solicitudes.obtener_solicitud(poliza_id)
+        cliente = await self._solicitudes.obtener_cliente_de_solicitud(poliza["clienteId"])
+        return {**poliza, "cliente": vista_de_cliente_de_solicitud(cliente)}
+
+    async def imagen(self, poliza_id: str, evidencia_id: str) -> tuple[bytes, str]:
+        poliza = await self._solicitudes.obtener_solicitud(poliza_id)
+        if evidencia_id not in {e.get("evidenciaId") for e in poliza.get("evidencias", [])}:
+            # svc-core entrega cualquier imagen por su id: aquí se exige que sea de esta solicitud.
+            raise RecursoNoEncontrado("Evidencia no encontrada")
+        return await self._solicitudes.imagen_de_evidencia(evidencia_id)
+
+    async def decidir(
+        self, agente: str, poliza_id: str, decision: str, pendientes: list[str]
+    ) -> dict:
+        return await self._solicitudes.decidir_solicitud(
+            poliza_id, {"decision": decision, "agente": agente, "pendientes": pendientes}
         )
 
 

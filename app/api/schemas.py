@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 _EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
@@ -551,3 +551,93 @@ class VentaOut(PolizaOut):
     cliente_id: str
     socio_id: str
     datos_venta: DatosVentaOut
+
+
+# --- Solicitudes en revisión del ADMIN (BITS-376) ---
+
+PendienteDeAgente = Literal["EVIDENCIA_EN_REVISION", "CREDITO_NO_VERIFICADO"]
+
+
+class PendienteResumenOut(_Respuesta):
+    codigo: CodigoPendiente
+    tipo: Literal["USUARIO", "AGENTE"]
+
+
+class SolicitudResumenOut(_Respuesta):
+    """Una fila de la bandeja."""
+
+    poliza_id: str
+    numero: str | None = None
+    cliente_id: str
+    estado: EstadoPoliza
+    creada_en: datetime
+    solicitud_vigente_hasta: datetime | None = None
+    prima_total_mensual: float
+    origen_datos: Literal["CONFIRMADO", "DECLARADO"]
+    pendientes: list[PendienteResumenOut]
+
+
+class PaginaSolicitudesOut(_Respuesta):
+    items: list[SolicitudResumenOut]
+    siguiente_cursor: str | None = None
+
+
+class EvidenciaSolicitudOut(_Respuesta):
+    tipo: TipoEvidencia
+    estado: Literal["ACEPTADA", "REVISION_MANUAL", "PENDIENTE"]
+    evidencia_id: str | None = None
+
+
+class DecisionSolicitudOut(_Respuesta):
+    decision: Literal["APROBAR", "RECHAZAR"]
+    agente: str
+    pendientes: list[CodigoPendiente]
+    nota: str | None = None
+    decidida_en: datetime
+
+
+class ClienteSolicitudOut(_Respuesta):
+    id: str
+    nombre: str
+    tipo_documento: Literal["CC", "CE", "PA"]
+    numero_documento: str
+
+
+class SolicitudOut(PolizaOut):
+    cliente_id: str
+    evidencias: list[EvidenciaSolicitudOut]
+    decisiones: list[DecisionSolicitudOut]
+
+
+class SolicitudDetalleOut(SolicitudOut):
+    cliente: ClienteSolicitudOut
+
+
+class DecidirSolicitudRequest(_Model):
+    """La decisión del ``ADMIN``. No lleva ``agente`` ni ``nota``: el agente es el correo de la
+    sesión y el Backoffice no envía nota (un campo de más es 400). Aprobar lleva los
+    ``pendientes`` que se verificaron; rechazar lleva un solo ``motivo``."""
+
+    decision: Literal["APROBAR", "RECHAZAR"]
+    pendientes: list[PendienteDeAgente] | None = Field(default=None, min_length=1, max_length=2)
+    motivo: PendienteDeAgente | None = None
+
+    @model_validator(mode="after")
+    def _coherente(self) -> DecidirSolicitudRequest:
+        if self.decision == "APROBAR":
+            if not self.pendientes:
+                raise ValueError("Aprobar lleva los pendientes que verificaste")
+            if len(set(self.pendientes)) != len(self.pendientes):
+                raise ValueError("Los pendientes no pueden repetirse")
+            if self.motivo is not None:
+                raise ValueError("Aprobar no lleva motivo")
+        else:
+            if self.motivo is None:
+                raise ValueError("Rechazar lleva el motivo")
+            if self.pendientes is not None:
+                raise ValueError("Rechazar lleva solo el motivo, no pendientes")
+        return self
+
+    def pendientes_a_resolver(self) -> list[str]:
+        """Lo que se manda a svc-core: los verificados al aprobar, el motivo al rechazar."""
+        return list(self.pendientes) if self.decision == "APROBAR" else [str(self.motivo)]
