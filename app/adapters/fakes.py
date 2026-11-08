@@ -930,3 +930,125 @@ class FakeVentasSocio:
         if idempotency_key:
             self._por_clave[clave] = poliza
         return poliza
+
+
+class FakeSolicitudes:
+    """Solicitudes en revisión en memoria con la forma que entrega svc-core y sus reglas de
+    decisión. ``sembrar`` deja una póliza ya armada (con ``clienteId``, ``pendientes``,
+    ``evidencias`` y ``decisiones``) y el cliente dueño, para pruebas y para el front."""
+
+    _MENSAJES_RECHAZO = {
+        "EVIDENCIA_EN_REVISION": "No pudimos verificar tu identidad con los documentos enviados.",
+        "CREDITO_NO_VERIFICADO": "No pudimos verificar los datos de tu crédito.",
+    }
+
+    def __init__(self) -> None:
+        self._polizas: dict[str, dict] = {}
+        self._clientes: dict[str, dict] = {}
+        self._imagenes: dict[str, tuple[bytes, str]] = {}
+        self.decisiones: list[tuple[str, dict]] = []
+
+    def sembrar(self, poliza: dict, cliente: dict) -> dict:
+        self._polizas[poliza["polizaId"]] = poliza
+        self._clientes[cliente["id"]] = cliente
+        return poliza
+
+    def sembrar_imagen(self, evidencia_id: str, contenido: bytes, content_type: str) -> None:
+        self._imagenes[evidencia_id] = (contenido, content_type)
+
+    def _por_id(self, poliza_id: str) -> dict:
+        if poliza_id not in self._polizas:
+            raise RecursoNoEncontrado("Póliza no encontrada")
+        return self._polizas[poliza_id]
+
+    async def listar_solicitudes(self, limite: int, cursor: str | None) -> dict:
+        en_revision = sorted(
+            (
+                p
+                for p in self._polizas.values()
+                if p["estado"] == "PENDIENTE"
+                and any(x["tipo"] == "AGENTE" for x in p["pendientes"])
+            ),
+            key=lambda p: p["creadaEn"],
+        )
+        desde = int(cursor) if cursor else 0
+        pagina = en_revision[desde : desde + limite]
+        return {
+            "items": [
+                {
+                    "polizaId": p["polizaId"],
+                    "numero": p.get("numero"),
+                    "clienteId": p["clienteId"],
+                    "estado": p["estado"],
+                    "creadaEn": p["creadaEn"],
+                    "solicitudVigenteHasta": p.get("solicitudVigenteHasta"),
+                    "primaTotalMensual": p["primaTotalMensual"],
+                    "origenDatos": p["origenDatos"],
+                    "pendientes": [
+                        {"codigo": x["codigo"], "tipo": x["tipo"]} for x in p["pendientes"]
+                    ],
+                }
+                for p in pagina
+            ],
+            "siguienteCursor": (str(desde + limite) if desde + limite < len(en_revision) else None),
+        }
+
+    async def obtener_solicitud(self, poliza_id: str) -> dict:
+        return dict(self._por_id(poliza_id))
+
+    async def obtener_cliente_de_solicitud(self, cliente_id: str) -> dict:
+        if cliente_id not in self._clientes:
+            raise RecursoNoEncontrado("Cliente no encontrado")
+        return dict(self._clientes[cliente_id])
+
+    async def imagen_de_evidencia(self, evidencia_id: str) -> tuple[bytes, str]:
+        if evidencia_id not in self._imagenes:
+            raise RecursoNoEncontrado("Archivo no encontrado")
+        return self._imagenes[evidencia_id]
+
+    async def decidir_solicitud(self, poliza_id: str, cuerpo: dict) -> dict:
+        self.decisiones.append((poliza_id, cuerpo))
+        poliza = self._por_id(poliza_id)
+        ahora = datetime.now(UTC)
+        vigente_hasta = poliza.get("solicitudVigenteHasta")
+        if poliza["estado"] == "PENDIENTE" and vigente_hasta:
+            if datetime.fromisoformat(vigente_hasta.replace("Z", "+00:00")) < ahora:
+                raise Conflicto("La solicitud venció", codigo="SOLICITUD_VENCIDA")
+        if poliza["estado"] != "PENDIENTE":
+            raise Conflicto("La póliza no está pendiente", codigo="POLIZA_NO_PENDIENTE")
+        vigentes = {x["codigo"] for x in poliza["pendientes"]}
+        for codigo in cuerpo["pendientes"]:
+            if codigo not in vigentes:
+                raise ReglaNegocio(
+                    f"La póliza no tiene el pendiente {codigo}", codigo="PENDIENTE_NO_APLICA"
+                )
+        poliza["decisiones"] = [
+            *poliza["decisiones"],
+            {
+                "decision": cuerpo["decision"],
+                "agente": cuerpo["agente"],
+                "pendientes": list(cuerpo["pendientes"]),
+                "nota": cuerpo.get("nota"),
+                "decididaEn": ahora.isoformat(),
+            },
+        ]
+        if cuerpo["decision"] == "RECHAZAR":
+            poliza["estado"] = "RECHAZADA"
+            poliza["pendientes"] = []
+            poliza["rechazo"] = {
+                "motivos": [
+                    {"codigo": c, "mensaje": self._MENSAJES_RECHAZO[c]}
+                    for c in cuerpo["pendientes"]
+                ],
+                "rechazadaEn": ahora.isoformat(),
+            }
+        else:
+            poliza["pendientes"] = [
+                x for x in poliza["pendientes"] if x["codigo"] not in cuerpo["pendientes"]
+            ]
+            if not poliza["pendientes"]:
+                poliza["estado"] = "EMITIDA"
+                poliza["numero"] = "SOL-VH-2026-FAKE02"
+                poliza["emitidaEn"] = ahora.isoformat()
+                poliza["solicitudVigenteHasta"] = None
+        return dict(poliza)

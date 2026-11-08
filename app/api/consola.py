@@ -24,14 +24,18 @@ from app.api.schemas import (
     CrearUsuarioRequest,
     CredencialesRequest,
     DecidirSiniestroRequest,
+    DecidirSolicitudRequest,
     EntidadFinancieraOut,
     EstadoSiniestro,
+    PaginaSolicitudesOut,
     PrecioVentaOut,
     PrecioVentaRequest,
     RefrescoRequest,
     SesionConsolaOut,
     SiniestroInternoOut,
     SiniestroInternoResumenOut,
+    SolicitudDetalleOut,
+    SolicitudOut,
     UsuarioOut,
     VentaOut,
     VentaRequest,
@@ -39,7 +43,11 @@ from app.api.schemas import (
 from app.consola import ConsolaService
 from app.domain import ClaimsConsola, NoAutorizado, Prohibido, RolConsola, SolicitudInvalida
 from app.logging_utils import sanear_para_log
-from app.services import SiniestrosBackofficeService, VentasSocioService
+from app.services import (
+    SiniestrosBackofficeService,
+    SolicitudesBackofficeService,
+    VentasSocioService,
+)
 
 logger = logging.getLogger("bff_web.api")
 
@@ -56,6 +64,15 @@ def get_siniestros_backoffice(request: Request) -> SiniestrosBackofficeService:
 
 
 SiniestrosBackofficeDep = Annotated[SiniestrosBackofficeService, Depends(get_siniestros_backoffice)]
+
+
+def get_solicitudes_backoffice(request: Request) -> SolicitudesBackofficeService:
+    return request.app.state.solicitudes_backoffice
+
+
+SolicitudesBackofficeDep = Annotated[
+    SolicitudesBackofficeService, Depends(get_solicitudes_backoffice)
+]
 
 
 def claims_consola_actuales(
@@ -199,6 +216,69 @@ async def decidir_siniestro(
         actor.correo, siniestro_id, payload.model_dump(by_alias=True, exclude_none=True)
     )
     return SiniestroInternoOut.model_validate(siniestro)
+
+
+@backoffice_router.get("/solicitudes", response_model=PaginaSolicitudesOut, tags=["Backoffice"])
+async def listar_bandeja_de_solicitudes(
+    servicio: SolicitudesBackofficeDep,
+    limite: Annotated[int, Query(ge=1, le=100)] = 25,
+    cursor: Annotated[str | None, Query(max_length=256)] = None,
+) -> PaginaSolicitudesOut:
+    logger.info("GET /v1/backoffice/solicitudes: solicitud recibida")
+    return PaginaSolicitudesOut.model_validate(await servicio.bandeja(limite, cursor))
+
+
+@backoffice_router.get(
+    "/solicitudes/{poliza_id}", response_model=SolicitudDetalleOut, tags=["Backoffice"]
+)
+async def obtener_solicitud_de_la_bandeja(
+    poliza_id: str, servicio: SolicitudesBackofficeDep
+) -> SolicitudDetalleOut:
+    logger.info("GET /v1/backoffice/solicitudes/%s: solicitud recibida", sanear_para_log(poliza_id))
+    return SolicitudDetalleOut.model_validate(await servicio.detalle(poliza_id))
+
+
+@backoffice_router.get(
+    "/solicitudes/{poliza_id}/evidencias/{evidencia_id}",
+    tags=["Backoffice"],
+    response_class=Response,
+    responses={200: {"content": {"image/jpeg": {}, "image/png": {}}}},
+)
+async def obtener_imagen_de_la_solicitud(
+    poliza_id: str, evidencia_id: str, servicio: SolicitudesBackofficeDep
+) -> Response:
+    # La imagen no se escribe en el log, solo a qué solicitud pertenece.
+    logger.info(
+        "GET /v1/backoffice/solicitudes/%s/evidencias: solicitud recibida",
+        sanear_para_log(poliza_id),
+    )
+    contenido, tipo = await servicio.imagen(poliza_id, evidencia_id)
+    return Response(
+        content=contenido,
+        media_type=tipo,
+        headers={"Cache-Control": "no-store", "Content-Disposition": "inline"},
+    )
+
+
+@backoffice_router.post(
+    "/solicitudes/{poliza_id}/decisiones", response_model=SolicitudOut, tags=["Backoffice"]
+)
+async def decidir_solicitud(
+    poliza_id: str,
+    payload: DecidirSolicitudRequest,
+    servicio: SolicitudesBackofficeDep,
+    actor: Annotated[ClaimsConsola, Depends(requiere_admin)],
+) -> SolicitudOut:
+    # El agente es el correo de la sesión y no se escribe en el log.
+    logger.info(
+        "POST /v1/backoffice/solicitudes/%s/decisiones: solicitud recibida decision=%s",
+        sanear_para_log(poliza_id),
+        payload.decision,
+    )
+    poliza = await servicio.decidir(
+        actor.correo, poliza_id, payload.decision, payload.pendientes_a_resolver()
+    )
+    return SolicitudOut.model_validate(poliza)
 
 
 # --- Solo SOCIO ---

@@ -19,6 +19,7 @@ from app.adapters.fakes import (
     FakeIdentityProvider,
     FakePolizas,
     FakeSiniestros,
+    FakeSolicitudes,
     FakeVentasSocio,
 )
 from app.adapters.identity_platform import IdentityPlatformAdapter
@@ -36,6 +37,7 @@ from app.ports import (
     IdentityProviderPort,
     PolizasPort,
     SiniestrosPort,
+    SolicitudesBackofficePort,
     VentasSocioPort,
 )
 from app.resilience import ResilientHttpClient, build_breaker
@@ -61,6 +63,8 @@ class Dependencias:
     siniestros: SiniestrosPort
     # En modo http es el mismo adaptador que ``core``.
     ventas: VentasSocioPort
+    # En modo http es el mismo adaptador que ``core``.
+    solicitudes: SolicitudesBackofficePort
 
     async def aclose(self) -> None:
         # ``entidades`` comparte cliente HTTP con ``documentos_legales`` (los dos son Productos).
@@ -105,6 +109,7 @@ def build_dependencias(settings: Settings) -> Dependencias:
             FakePolizas(),
             FakeSiniestros(),
             FakeVentasSocio(),
+            FakeSolicitudes(),
         )
 
     if settings.adapters == "http":
@@ -195,6 +200,7 @@ def build_dependencias(settings: Settings) -> Dependencias:
             PerfilamientoClientAdapter(perfilamiento_http),
             productos,
             consola_sessions,
+            core,
             core,
             core,
             core,

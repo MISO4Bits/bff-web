@@ -220,3 +220,33 @@ class SiniestrosPort(Protocol):
         siniestro ya cerrado se devuelve como quedó; uno en ``FALTA_INFORMACION`` responde
         ``Conflicto``; un valor sobre la suma asegurada, ``ReglaNegocio``."""
         ...
+
+
+@runtime_checkable
+class SolicitudesBackofficePort(Protocol):
+    """Solicitudes de póliza que esperan una revisión del ``ADMIN`` (BITS-376). Devuelve el cuerpo
+    tal cual lo entrega svc-core (ya validado allá); los errores salen como ``BffError`` con su
+    ``codigo``."""
+
+    async def listar_solicitudes(self, limite: int, cursor: str | None) -> dict:
+        """Las ``PENDIENTE`` con un pendiente de agente, de la más antigua a la más reciente:
+        ``{items, siguienteCursor}``."""
+        ...
+
+    async def obtener_solicitud(self, poliza_id: str) -> dict:
+        """El detalle interno de la póliza: crédito, coberturas, evidencias y decisiones."""
+        ...
+
+    async def obtener_cliente_de_solicitud(self, cliente_id: str) -> dict:
+        """El cliente completo, para mostrar su nombre y su documento al ``ADMIN``."""
+        ...
+
+    async def imagen_de_evidencia(self, evidencia_id: str) -> tuple[bytes, str]:
+        """La imagen de una evidencia de identidad y su tipo de contenido."""
+        ...
+
+    async def decidir_solicitud(self, poliza_id: str, cuerpo: dict) -> dict:
+        """Aprueba pendientes o rechaza. ``cuerpo`` lleva el ``agente`` (la sesión). Una
+        solicitud vencida o ya decidida responde ``Conflicto``; un pendiente que no tiene,
+        ``ReglaNegocio``."""
+        ...
