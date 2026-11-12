@@ -276,3 +276,70 @@ async def test_el_doble_y_el_servicio_responden_como_svc_core():
     assert (await servicio.obtener("c-1", "s-1"))["numero"].startswith("SIN-2026-")
     with pytest.raises(RecursoNoEncontrado):
         await servicio.obtener("otro", "s-1")
+
+
+ASISTENCIA = {
+    "id": "a-1",
+    "numero": "ASI-2026-K7M2Q9",
+    "tipo": "plomeria",
+    "prestador": {
+        "id": "pr-001",
+        "nombre": "Hogar Reparaciones Cedritos",
+        "direccion": "Calle 123 # 1-87",
+        "tiempoLlegadaMin": 20,
+    },
+    "tiempoLlegadaMin": 20,
+    "origen": "FOTOS",
+    "latitud": 4.65,
+    "longitud": -74.06,
+    "direccion": None,
+    "localidad": None,
+    "solicitadaEn": "2026-11-10T16:00:00Z",
+}
+
+
+async def test_el_detalle_trae_las_solicitudes_de_ayuda_y_cumple_el_contrato(
+    app, cliente_autenticado, openapi_spec
+):
+    client, headers, cliente_id = cliente_autenticado
+    siniestros = _con_siniestros(app)
+    siniestros.sembrar(
+        cliente_id, _siniestro("s-1", "2026-11-10T15:02:00Z", asistencias=[ASISTENCIA])
+    )
+
+    respuesta = await client.get(f"{RUTA}/s-1", headers=headers)
+
+    assert respuesta.status_code == 200
+    _validar(openapi_spec, "Siniestro", respuesta.json())
+    assert respuesta.json()["asistencias"] == [ASISTENCIA]
+
+
+async def test_el_detalle_sin_asistencias_sigue_respondiendo_con_la_lista_vacia(
+    app, cliente_autenticado, openapi_spec
+):
+    """svc-core desplegado antes de BITS-385 no devuelve el campo: el BFF no se cae."""
+    client, headers, cliente_id = cliente_autenticado
+    siniestros = _con_siniestros(app)
+    siniestros.sembrar(cliente_id, _siniestro("s-1", "2026-11-10T15:02:00Z"))
+
+    respuesta = await client.get(f"{RUTA}/s-1", headers=headers)
+
+    assert respuesta.status_code == 200
+    _validar(openapi_spec, "Siniestro", respuesta.json())
+    assert respuesta.json()["asistencias"] == []
+
+
+async def test_un_campo_nuevo_de_svc_core_en_una_asistencia_no_rompe_el_detalle(
+    app, cliente_autenticado
+):
+    client, headers, cliente_id = cliente_autenticado
+    siniestros = _con_siniestros(app)
+    siniestros.sembrar(
+        cliente_id,
+        _siniestro("s-1", "2026-11-10T15:02:00Z", asistencias=[{**ASISTENCIA, "futuro": 1}]),
+    )
+
+    respuesta = await client.get(f"{RUTA}/s-1", headers=headers)
+
+    assert respuesta.status_code == 200
+    assert "futuro" not in respuesta.json()["asistencias"][0]
