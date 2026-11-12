@@ -8,7 +8,7 @@ import re
 import time
 import unicodedata
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
 
 from app.domain import (
     ESTADO_DISPONIBLE,
@@ -518,6 +518,49 @@ class VentasSocioService:
 
     async def vender(self, socio_id: str, cuerpo: dict, idempotency_key: str) -> dict:
         return await self._ventas.vender({**cuerpo, "socioId": socio_id}, idempotency_key)
+
+    async def polizas_del_socio(self, socio_id: str) -> dict:
+        """Todo lo que vendió el socio (BITS-380), de la más reciente a la más antigua. El
+        Backoffice cuenta y filtra las vistas sobre esta lista, así que se recorren las páginas de
+        svc-core hasta traerla completa. Con un tope: si lo supera devuelve lo que alcanzó y
+        ``incompleta = true``, para que el Backoffice no presente una cifra como si fuera total."""
+        items: list[dict] = []
+        cursor: str | None = None
+        incompleta = False
+        for _ in range(MAX_PAGINAS_POLIZAS_DEL_SOCIO):
+            pagina = await self._ventas.listar_polizas_del_socio(
+                socio_id, TAMANO_PAGINA_POLIZAS_DEL_SOCIO, cursor
+            )
+            items.extend(pagina["items"])
+            cursor = pagina.get("siguienteCursor")
+            if cursor is None:
+                break
+        else:
+            incompleta = True
+            logger.warning("pólizas del socio: se alcanzó el tope de %d y quedan más", len(items))
+        return {
+            "items": [_fila_de_poliza_vendida(p) for p in items],
+            "consultadoEn": datetime.now(UTC),
+            "incompleta": incompleta,
+        }
+
+
+# Las pólizas del socio se piden de a 100 (el máximo de svc-core) y hasta 20 páginas: 2.000 pólizas.
+TAMANO_PAGINA_POLIZAS_DEL_SOCIO = 100
+MAX_PAGINAS_POLIZAS_DEL_SOCIO = 20
+
+
+def _fila_de_poliza_vendida(poliza: dict) -> dict:
+    """Lo que el socio ve de cada póliza que vendió: nada del resumen interno de svc-core."""
+    return {
+        "polizaId": poliza["polizaId"],
+        "numero": poliza.get("numero"),
+        "estado": poliza["estado"],
+        "emitidaEn": poliza.get("emitidaEn"),
+        "creadaEn": poliza["creadaEn"],
+        "primaTotalMensual": poliza["primaTotalMensual"],
+        "cliente": poliza.get("cliente"),
+    }
 
 
 def vista_de_cliente(cliente: dict) -> dict:

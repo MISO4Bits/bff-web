@@ -578,6 +578,27 @@ class VentaOut(PolizaOut):
     datos_venta: DatosVentaOut
 
 
+class PolizaVendidaOut(_Respuesta):
+    """Una póliza que vendió el socio, para el tablero y las listas del Backoffice."""
+
+    poliza_id: str
+    numero: str | None = None
+    estado: EstadoPoliza
+    emitida_en: datetime | None = None
+    creada_en: datetime
+    prima_total_mensual: float
+    cliente: ClienteSocioOut | None = None
+
+
+class PolizasDelSocioOut(_Respuesta):
+    """Todo lo que vendió el socio. ``consultado_en`` es la hora de corte del tablero. Si
+    ``incompleta`` es ``true``, hay más pólizas de las que se alcanzaron a traer."""
+
+    items: list[PolizaVendidaOut]
+    consultado_en: AwareDatetime
+    incompleta: bool
+
+
 # --- Solicitudes en revisión del ADMIN (BITS-376) ---
 
 PendienteDeAgente = Literal["EVIDENCIA_EN_REVISION", "CREDITO_NO_VERIFICADO"]

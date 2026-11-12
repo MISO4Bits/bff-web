@@ -28,6 +28,7 @@ from app.api.schemas import (
     EntidadFinancieraOut,
     EstadoSiniestro,
     PaginaSolicitudesOut,
+    PolizasDelSocioOut,
     PrecioVentaOut,
     PrecioVentaRequest,
     RefrescoRequest,
@@ -360,3 +361,16 @@ async def vender_poliza(
         socio.uid, payload.model_dump(mode="json", by_alias=True), idempotency_key
     )
     return VentaOut.model_validate(poliza)
+
+
+@socio_router.get("/polizas", response_model=PolizasDelSocioOut)
+async def listar_polizas_del_socio(
+    servicio: VentasSocioDep,
+    socio: Annotated[ClaimsConsola, Depends(requiere_socio)],
+    response: Response,
+) -> PolizasDelSocioOut:
+    # El socio es siempre el de la sesión: no hay parámetro para pedir las de otro.
+    logger.info("GET /v1/socio/polizas: solicitud recibida socio_id=%s", sanear_para_log(socio.uid))
+    polizas = await servicio.polizas_del_socio(socio.uid)
+    response.headers["Cache-Control"] = "no-store"
+    return PolizasDelSocioOut.model_validate(polizas)
