@@ -418,6 +418,16 @@ class CoreClientAdapter:
         logger.info("póliza vendida por un socio")
         return resp.json()
 
+    async def listar_polizas_del_socio(
+        self, socio_id: str, limite: int, cursor: str | None
+    ) -> dict:
+        params = {"socioId": socio_id, "orden": "-creadaEn", "limite": str(limite)}
+        if cursor:
+            params["cursor"] = cursor
+        resp = await self._http.request("GET", POLIZAS, params=params)
+        _asegurar_poliza_ok(resp)
+        return resp.json()
+
     # --- pólizas (BITS-101) ---
 
     async def solicitar(self, cliente_id: str, cuerpo: dict) -> tuple[dict, bool]:

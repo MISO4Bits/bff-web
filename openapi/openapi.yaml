@@ -859,6 +859,43 @@ paths:
         '422': { $ref: '#/components/responses/FueraDeRango' }
         '503': { $ref: '#/components/responses/NoDisponible' }
 
+  /v1/socio/polizas:
+    get:
+      operationId: listarPolizasDelSocio
+      tags: [Socio]
+      summary: Las pólizas que vendí
+      description: |
+        Solo `SOCIO`. **El socio es siempre el del token**: no hay parámetro para pedir las de otro,
+        y cada socio recibe únicamente lo que vendió. De la más reciente a la más antigua, completa
+        y sin paginar: el Backoffice cuenta y filtra las dos vistas (pólizas vendidas y renovaciones
+        rechazadas) y pagina en el front, igual que el tablero del Admin. No hay endpoint de
+        conteos.
+
+        Cada póliza trae al cliente con lo mínimo que ya ve el socio al venderle: nombre, tipo de
+        documento y **los últimos cuatro dígitos** del documento. Nunca correo, teléfono, fecha de
+        nacimiento ni el documento completo.
+
+        `consultadoEn` es la hora de corte del tablero. Si `incompleta` es `true` hay más de 2.000
+        pólizas y esta lista no las trae todas: no presentar una cifra como total.
+      security:
+        - consolaAuth: []
+      responses:
+        '200':
+          description: Lo que vendió el socio (`items` vacío si no ha vendido).
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolizasDelSocio' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '403':
+          description: La sesión no es de un `SOCIO` (`codigo = ROL_NO_PERMITIDO`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemaConsola' }
+        '503': { $ref: '#/components/responses/NoDisponible' }
+
   /v1/cuenta/siniestros:
     get:
       operationId: listarMisSiniestros
@@ -1756,6 +1793,39 @@ components:
         tipoDocumento: { $ref: '#/components/schemas/TipoDocumento' }
         ultimosDigitosDocumento: { type: string, minLength: 1, maxLength: 4 }
         estado: { $ref: '#/components/schemas/EstadoCliente' }
+    PolizaVendida:
+      type: object
+      additionalProperties: false
+      required: [polizaId, estado, creadaEn, primaTotalMensual]
+      properties:
+        polizaId: { type: string, format: uuid }
+        numero: { type: [string, 'null'], examples: [SOL-VH-2026-K7M2Q9] }
+        estado: { $ref: '#/components/schemas/EstadoPoliza' }
+        emitidaEn:
+          type: [string, 'null']
+          format: date-time
+          description: La fecha de la venta.
+        creadaEn: { type: string, format: date-time }
+        primaTotalMensual: { type: number }
+        cliente:
+          oneOf:
+            - { $ref: '#/components/schemas/ClienteSocio' }
+            - { type: 'null' }
+    PolizasDelSocio:
+      type: object
+      additionalProperties: false
+      required: [items, consultadoEn, incompleta]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PolizaVendida' }
+        consultadoEn:
+          type: string
+          format: date-time
+          description: La hora de corte de la consulta.
+        incompleta:
+          type: boolean
+          description: '`true` si hay más pólizas de las que se alcanzaron a traer (tope de 2.000).'
     CrearClienteSocioRequest:
       type: object
       additionalProperties: false

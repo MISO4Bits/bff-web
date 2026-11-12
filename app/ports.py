@@ -185,6 +185,14 @@ class VentasSocioPort(Protocol):
         """Emite la póliza al instante. El ``cuerpo`` lleva el ``socioId`` de la sesión."""
         ...
 
+    async def listar_polizas_del_socio(
+        self, socio_id: str, limite: int, cursor: str | None
+    ) -> dict:
+        """Una página de las pólizas que vendió el socio, de la más reciente a la más antigua:
+        ``{items, siguienteCursor}``. Cada item trae al cliente (nombre y últimos cuatro dígitos
+        de su documento) y nunca más."""
+        ...
+
 
 @runtime_checkable
 class SiniestrosPort(Protocol):

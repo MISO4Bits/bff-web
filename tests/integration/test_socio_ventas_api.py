@@ -81,7 +81,7 @@ async def test_toda_ruta_de_socio_exige_la_sesion_de_un_socio(client, app, ident
         if path.startswith("/v1/socio")
         for metodo in operaciones
     ]
-    assert len(rutas) == 5
+    assert len(rutas) == 6
     for metodo, path in rutas:
         sin_sesion = await client.request(metodo, path)
         como_admin = await client.request(

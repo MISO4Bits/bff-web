@@ -931,6 +931,58 @@ class FakeVentasSocio:
             self._por_clave[clave] = poliza
         return poliza
 
+    async def listar_polizas_del_socio(
+        self, socio_id: str, limite: int, cursor: str | None
+    ) -> dict:
+        """Como svc-core con ``socioId``: solo lo que vendió ese socio, de la más reciente a la
+        más antigua, con el cliente (nombre y últimos cuatro dígitos) en cada fila."""
+        self.llamadas.append(("listar_polizas_del_socio", socio_id, limite, cursor))
+        propias = [p for p in reversed(self.ventas) if p["socioId"] == socio_id]
+        desde = int(cursor) if cursor else 0
+        pagina = propias[desde : desde + limite]
+        return {
+            "items": [
+                {
+                    "polizaId": p["polizaId"],
+                    "numero": p["numero"],
+                    "clienteId": p["clienteId"],
+                    "estado": p["estado"],
+                    "creadaEn": p["creadaEn"],
+                    "solicitudVigenteHasta": None,
+                    "primaTotalMensual": p["primaTotalMensual"],
+                    "origenDatos": p["origenDatos"],
+                    "pendientes": [],
+                    "socioId": p["socioId"],
+                    "emitidaEn": p["emitidaEn"],
+                    "cliente": self._del_cliente(p["clienteId"]),
+                }
+                for p in pagina
+            ],
+            "siguienteCursor": str(desde + limite) if desde + limite < len(propias) else None,
+        }
+
+    def _del_cliente(self, cliente_id: str) -> dict | None:
+        cliente = self.clientes.get(cliente_id)
+        if cliente is None:
+            return None
+        nombre = " ".join(
+            p
+            for p in (
+                cliente["primerNombre"],
+                cliente.get("segundoNombre"),
+                cliente["primerApellido"],
+                cliente.get("segundoApellido"),
+            )
+            if p
+        )
+        return {
+            "id": cliente["id"],
+            "nombre": nombre,
+            "tipoDocumento": cliente["tipoDocumento"],
+            "ultimosDigitosDocumento": cliente["numeroDocumento"][-4:],
+            "estado": cliente["estado"],
+        }
+
 
 class FakeSolicitudes:
     """Solicitudes en revisión en memoria con la forma que entrega svc-core y sus reglas de
