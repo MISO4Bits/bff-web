@@ -2902,6 +2902,33 @@ components:
             - { $ref: '#/components/schemas/EventoSismo' }
             - { type: 'null' }
           description: Solo en el paramétrico.
+        asistencias:
+          type: array
+          items: { $ref: '#/components/schemas/AsistenciaSiniestro' }
+          description: Las solicitudes de ayuda en sitio, de la más antigua a la más reciente.
+
+    AsistenciaSiniestro:
+      type: object
+      required: [id, numero, tipo, prestador, tiempoLlegadaMin, origen, solicitadaEn]
+      properties:
+        id: { type: string }
+        numero: { type: string, examples: [ASI-2026-K7M2Q9] }
+        tipo: { type: string }
+        prestador:
+          type: object
+          required: [id, nombre, direccion, tiempoLlegadaMin]
+          properties:
+            id: { type: string }
+            nombre: { type: string }
+            direccion: { type: string }
+            tiempoLlegadaMin: { type: integer }
+        tiempoLlegadaMin: { type: integer }
+        origen: { type: string, enum: [FOTOS, TELEFONO, DIRECCION] }
+        latitud: { type: [number, 'null'] }
+        longitud: { type: [number, 'null'] }
+        direccion: { type: [string, 'null'] }
+        localidad: { type: [string, 'null'] }
+        solicitadaEn: { type: string, format: date-time }
 
     ProblemaSiniestro:
       allOf:
@@ -3169,3 +3196,6 @@ components:
         decisiones:
           type: array
           items: { $ref: '#/components/schemas/DecisionSiniestro' }
+        asistencias:
+          type: array
+          items: { $ref: '#/components/schemas/AsistenciaSiniestro' }

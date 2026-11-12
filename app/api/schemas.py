@@ -419,6 +419,29 @@ class SiniestroResumenOut(_Model):
     actualizado_en: AwareDatetime
 
 
+class PrestadorAsistenciaOut(_Respuesta):
+    id: str
+    nombre: str
+    direccion: str
+    tiempo_llegada_min: int
+
+
+class AsistenciaSiniestroOut(_Respuesta):
+    """Una solicitud de ayuda en sitio, como la guarda svc-core (BITS-385)."""
+
+    id: str
+    numero: str
+    tipo: str
+    prestador: PrestadorAsistenciaOut
+    tiempo_llegada_min: int
+    origen: Literal["FOTOS", "TELEFONO", "DIRECCION"]
+    latitud: float | None = None
+    longitud: float | None = None
+    direccion: str | None = None
+    localidad: str | None = None
+    solicitada_en: AwareDatetime
+
+
 class SiniestroOut(SiniestroResumenOut):
     """El detalle que ve el cliente. svc-core no devuelve el saldo del crédito ni el destino del
     pago: ahí está el número de cuenta."""
@@ -432,6 +455,8 @@ class SiniestroOut(SiniestroResumenOut):
     pago: PagoOut | None = None
     archivos: list[ArchivoSiniestroOut]
     evento: EventoSismoOut | None = None
+    # Opcional: svc-core solo la devuelve desde BITS-385; sin ella el detalle sigue igual.
+    asistencias: list[AsistenciaSiniestroOut] = Field(default_factory=list)
 
 
 # --- Bandeja de siniestros del ADMIN (BITS-377) ---
