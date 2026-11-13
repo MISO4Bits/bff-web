@@ -619,7 +619,18 @@ class FakeSiniestros:
     def __init__(self) -> None:
         self._items: dict[str, tuple[str, dict]] = {}
         self._archivos: dict[tuple[str, str], tuple[bytes, str]] = {}
+        self._clientes: dict[str, dict] = {}
         self.decisiones: list[tuple[str, dict]] = []
+
+    def sembrar_cliente(self, cliente: dict) -> dict:
+        """El cliente dueño de los siniestros (con la forma que entrega svc-core)."""
+        self._clientes[cliente["id"]] = cliente
+        return cliente
+
+    async def cliente_del_siniestro(self, cliente_id: str) -> dict:
+        if cliente_id not in self._clientes:
+            raise RecursoNoEncontrado("Cliente no encontrado")
+        return dict(self._clientes[cliente_id])
 
     def sembrar(self, cliente_id: str, siniestro: dict) -> dict:
         self._items[siniestro["id"]] = (cliente_id, siniestro)

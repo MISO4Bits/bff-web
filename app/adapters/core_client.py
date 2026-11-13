@@ -285,6 +285,9 @@ class CoreClientAdapter:
         _asegurar_poliza_ok(resp)
         return resp.json()
 
+    async def cliente_del_siniestro(self, cliente_id: str) -> dict:
+        return await self.obtener_cliente_de_solicitud(cliente_id)
+
     async def archivo_de_siniestro(self, siniestro_id: str, archivo_id: str) -> tuple[bytes, str]:
         resp = await self._http.request(
             "GET",

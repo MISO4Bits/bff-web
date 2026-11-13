@@ -3231,6 +3231,14 @@ components:
         id: { type: string, format: uuid }
         numero: { type: string }
         clienteId: { type: string }
+        cliente:
+          oneOf:
+            - { $ref: '#/components/schemas/ClienteSolicitud' }
+            - { type: 'null' }
+          description: |
+            Quién es el cliente: nombre, tipo y número de documento. Nunca correo ni teléfono. Solo
+            viene en el detalle (`GET`); `null` si no se alcanzó al cliente (el detalle sale igual) y
+            en la respuesta de una decisión.
         polizaId: { type: string }
         tipo: { $ref: '#/components/schemas/TipoSiniestro' }
         automatico: { type: boolean }

@@ -504,11 +504,24 @@ class SiniestroInternoResumenOut(SiniestroResumenOut):
     fecha_limite: AwareDatetime | None = None
 
 
+class ClienteSolicitudOut(_Respuesta):
+    """Del cliente, lo que el ``ADMIN`` necesita para revisar: quién es y su documento. Nunca
+    correo ni teléfono."""
+
+    id: str
+    nombre: str
+    tipo_documento: Literal["CC", "CE", "PA"]
+    numero_documento: str
+
+
 class SiniestroInternoOut(SiniestroOut):
     """El detalle del ``ADMIN``: el del cliente más el saldo guardado, cómo recibe el pago, la
     póliza afectada y las decisiones."""
 
     cliente_id: str
+    # Solo en el detalle (GET); ``None`` si no se alcanzó al cliente o en la respuesta de una
+    # decisión.
+    cliente: ClienteSolicitudOut | None = None
     poliza: PolizaDelSiniestroOut
     saldo_credito: SaldoCreditoOut
     destino_pago: dict | None = None
@@ -640,13 +653,6 @@ class DecisionSolicitudOut(_Respuesta):
     pendientes: list[CodigoPendiente]
     nota: str | None = None
     decidida_en: datetime
-
-
-class ClienteSolicitudOut(_Respuesta):
-    id: str
-    nombre: str
-    tipo_documento: Literal["CC", "CE", "PA"]
-    numero_documento: str
 
 
 class SolicitudOut(PolizaOut):
