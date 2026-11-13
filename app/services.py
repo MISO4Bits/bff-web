@@ -422,7 +422,21 @@ class SiniestrosBackofficeService:
         return await self._siniestros.bandeja_siniestros(estado, automatico)
 
     async def detalle(self, siniestro_id: str) -> dict:
-        return await self._siniestros.detalle_siniestro_interno(siniestro_id)
+        """El detalle de svc-core más el cliente (nombre y documento, nunca correo ni teléfono).
+        Si no se alcanza al cliente, el detalle sale igual con ``cliente = null``: sirve para
+        decidir aunque falte el nombre."""
+        detalle = await self._siniestros.detalle_siniestro_interno(siniestro_id)
+        return {**detalle, "cliente": await self._cliente(detalle["clienteId"])}
+
+    async def _cliente(self, cliente_id: str) -> dict | None:
+        try:
+            return vista_de_cliente_de_solicitud(
+                await self._siniestros.cliente_del_siniestro(cliente_id)
+            )
+        except BffError as exc:
+            # Sin el cliente no se cae el detalle. Ni su id ni su nombre van al log.
+            logger.warning("detalle de siniestro sin cliente (%s)", type(exc).__name__)
+            return None
 
     async def archivo(self, siniestro_id: str, archivo_id: str) -> tuple[bytes, str]:
         return await self._siniestros.archivo_de_siniestro(siniestro_id, archivo_id)

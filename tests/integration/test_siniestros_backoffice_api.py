@@ -12,7 +12,14 @@ from jsonschema import Draft202012Validator
 
 from app.adapters.core_client import CoreClientAdapter
 from app.adapters.fakes import FakeSiniestros
-from app.domain import BffError, Conflicto, RecursoNoEncontrado, ReglaNegocio, SolicitudInvalida
+from app.domain import (
+    BffError,
+    Conflicto,
+    DependenciaNoDisponible,
+    RecursoNoEncontrado,
+    ReglaNegocio,
+    SolicitudInvalida,
+)
 from app.resilience import ResilientHttpClient, build_breaker
 from app.services import SiniestrosBackofficeService
 from tests.conftest import REGISTRO_VALIDO
@@ -562,3 +569,141 @@ async def test_la_decision_traduce_los_errores_conservando_el_codigo(estado, cue
 
     assert getattr(error.value, "codigo", None) == cuerpo.get("codigo")
     assert getattr(error.value, "errores", None) == cuerpo.get("errores")
+
+
+# --- el cliente en el detalle (BITS-114) ---
+
+CLIENTE = {
+    "id": "c-1",
+    "tipoDocumento": "CC",
+    "numeroDocumento": "1020340001",
+    "primerNombre": "Sofía",
+    "segundoNombre": None,
+    "primerApellido": "Restrepo",
+    "segundoApellido": "Gil",
+    "email": "sofia@example.com",
+    "telefono": "+573001112233",
+    "fechaNacimiento": "1990-05-02",
+}
+
+
+async def test_el_detalle_trae_quien_es_el_cliente_sin_correo_ni_telefono(
+    client, siniestros, admin, openapi_spec
+):
+    siniestros.sembrar_cliente(CLIENTE)
+    siniestros.sembrar("c-1", _interno("s-1", "2026-11-10T15:02:00Z"))
+
+    respuesta = await client.get(f"{BASE}/s-1", headers=admin)
+
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    _validar(openapi_spec, "SiniestroInterno", cuerpo)
+    assert cuerpo["clienteId"] == "c-1"
+    assert cuerpo["cliente"] == {
+        "id": "c-1",
+        "nombre": "Sofía Restrepo Gil",
+        "tipoDocumento": "CC",
+        "numeroDocumento": "1020340001",
+    }
+    for dato in ("sofia@example.com", "+573001112233", "1990-05-02"):
+        assert dato not in respuesta.text
+
+
+async def test_el_detalle_de_un_siniestro_automatico_tambien_trae_al_cliente(
+    client, siniestros, admin, openapi_spec
+):
+    siniestros.sembrar_cliente(CLIENTE)
+    siniestros.sembrar(
+        "c-1",
+        _interno(
+            "s-auto",
+            "2026-11-10T15:02:00Z",
+            tipo="SISMO_PARAMETRICO",
+            automatico=True,
+            estado="PAGADO",
+            fechaLimite=None,
+            evento={"fecha": "2026-11-10", "municipio": "Bogotá", "magnitud": 6.1},
+        ),
+    )
+
+    cuerpo = (await client.get(f"{BASE}/s-auto", headers=admin)).json()
+
+    _validar(openapi_spec, "SiniestroInterno", cuerpo)
+    assert cuerpo["automatico"] is True and cuerpo["cliente"]["nombre"] == "Sofía Restrepo Gil"
+
+
+async def test_si_no_se_alcanza_al_cliente_el_detalle_sale_igual_con_cliente_null(
+    client, siniestros, admin, openapi_spec, caplog
+):
+    siniestros.sembrar("c-1", _interno("s-1", "2026-11-10T15:02:00Z"))  # sin cliente sembrado
+
+    with caplog.at_level(logging.WARNING):
+        respuesta = await client.get(f"{BASE}/s-1", headers=admin)
+
+    assert respuesta.status_code == 200
+    _validar(openapi_spec, "SiniestroInterno", respuesta.json())
+    assert respuesta.json()["cliente"] is None
+    assert respuesta.json()["clienteId"] == "c-1"
+    assert "detalle de siniestro sin cliente" in caplog.text
+
+
+async def test_si_svc_core_no_responde_por_el_cliente_el_detalle_sale_igual(
+    client, siniestros, admin, monkeypatch
+):
+    siniestros.sembrar("c-1", _interno("s-1", "2026-11-10T15:02:00Z"))
+
+    async def _cae(cliente_id):
+        raise DependenciaNoDisponible("svc-core no responde")
+
+    monkeypatch.setattr(siniestros, "cliente_del_siniestro", _cae)
+
+    respuesta = await client.get(f"{BASE}/s-1", headers=admin)
+
+    assert respuesta.status_code == 200 and respuesta.json()["cliente"] is None
+
+
+async def test_la_bandeja_no_trae_al_cliente_en_cada_fila(client, siniestros, admin, openapi_spec):
+    siniestros.sembrar_cliente(CLIENTE)
+    siniestros.sembrar("c-1", _interno("s-1", "2026-11-10T15:02:00Z"))
+
+    bandeja = (await client.get(BASE, headers=admin)).json()
+
+    assert "cliente" not in bandeja[0]
+    _validar(openapi_spec, "SiniestroInternoResumen", bandeja[0])
+
+
+async def test_el_log_no_escribe_el_nombre_ni_el_documento_del_cliente(
+    client, siniestros, admin, caplog
+):
+    siniestros.sembrar_cliente(CLIENTE)
+    siniestros.sembrar("c-1", _interno("s-1", "2026-11-10T15:02:00Z"))
+
+    with caplog.at_level(logging.INFO):
+        await client.get(f"{BASE}/s-1", headers=admin)
+
+    assert "Sofía" not in caplog.text and "1020340001" not in caplog.text
+
+
+@respx.mock
+async def test_el_adaptador_pide_el_cliente_a_svc_core():
+    ruta = respx.get(f"{CORE}/v1/clientes/c%2F1").mock(
+        return_value=httpx.Response(200, json={"id": "c/1"})
+    )
+    adaptador = _core()
+    try:
+        cliente = await adaptador.cliente_del_siniestro("c/1")
+    finally:
+        await adaptador.aclose()
+
+    assert cliente == {"id": "c/1"} and ruta.call_count == 1
+
+
+@respx.mock
+async def test_el_adaptador_traduce_el_error_al_pedir_el_cliente():
+    respx.get(f"{CORE}/v1/clientes/c-1").mock(return_value=httpx.Response(404, json={}))
+    adaptador = _core()
+    try:
+        with pytest.raises(RecursoNoEncontrado):
+            await adaptador.cliente_del_siniestro("c-1")
+    finally:
+        await adaptador.aclose()

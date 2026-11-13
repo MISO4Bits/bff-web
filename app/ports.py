@@ -219,6 +219,11 @@ class SiniestrosPort(Protocol):
         decisiones."""
         ...
 
+    async def cliente_del_siniestro(self, cliente_id: str) -> dict:
+        """El cliente completo, para mostrar su nombre y su documento al ``ADMIN`` en el detalle.
+        ``RecursoNoEncontrado`` si no existe."""
+        ...
+
     async def archivo_de_siniestro(self, siniestro_id: str, archivo_id: str) -> tuple[bytes, str]:
         """Un archivo del siniestro y su tipo de contenido."""
         ...
