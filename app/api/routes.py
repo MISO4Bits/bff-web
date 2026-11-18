@@ -27,6 +27,7 @@ from app.api.schemas import (
     CredencialesRequest,
     CreditosHipotecariosOut,
     CuentaOut,
+    DecisionRenovacionRequest,
     DisponibilidadOut,
     DocumentoLegalOut,
     DocumentoPolizaOut,
@@ -504,6 +505,30 @@ async def obtener_mi_poliza(
     )
     response.headers["Cache-Control"] = "no-store"
     return PolizaOut.model_validate(await service.obtener(claims.cliente_id, poliza_id))
+
+
+@router.post(
+    "/cuenta/polizas/{poliza_id}/renovacion",
+    response_model=PolizaOut,
+    tags=["Pólizas"],
+)
+async def decidir_renovacion_de_mi_poliza(
+    poliza_id: Annotated[str, Path(min_length=1, max_length=64)],
+    payload: DecisionRenovacionRequest,
+    claims: ClaimsDep,
+    service: PolizasDep,
+    response: Response,
+) -> PolizaOut:
+    logger.info(
+        "POST /v1/cuenta/polizas/%s/renovacion: solicitud recibida cliente_id=%s decision=%s",
+        sanear_para_log(poliza_id),
+        claims.cliente_id,
+        payload.decision,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return PolizaOut.model_validate(
+        await service.decidir_renovacion(claims.cliente_id, poliza_id, payload.decision)
+    )
 
 
 @router.get(

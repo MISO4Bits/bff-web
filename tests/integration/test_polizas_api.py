@@ -238,3 +238,132 @@ async def test_sin_sesion_es_401(client, metodo, ruta):
     respuesta = await getattr(client, metodo)(ruta, **kwargs)
 
     assert respuesta.status_code == 401
+
+
+# --- renovación (BITS-387) ---
+
+
+async def _emitida(app, client, headers) -> tuple[FakePolizas, str]:
+    polizas = _con_polizas(app, FakePolizas())
+    creada = (await client.post(RUTA, headers=headers, json=CUERPO)).json()
+    return polizas, creada["polizaId"]
+
+
+async def test_la_poliza_trae_la_renovacion_cuando_svc_core_la_entrega(
+    app, cliente_autenticado, openapi_spec
+):
+    client, headers = cliente_autenticado
+    polizas, poliza_id = await _emitida(app, client, headers)
+    polizas.sembrar_renovacion(poliza_id)
+
+    respuesta = await client.get(f"{RUTA}/{poliza_id}", headers=headers)
+
+    assert respuesta.status_code == 200
+    _validar(openapi_spec, "Poliza", respuesta.json())
+    renovacion = respuesta.json()["renovacion"]
+    assert renovacion["estado"] == "SIN_RESPUESTA"
+    assert renovacion["ipc"] == 0.05
+    assert renovacion["primaNueva"] > renovacion["primaActual"]
+    assert renovacion["avisoBanco"] is None
+
+
+async def test_la_poliza_sin_propuesta_no_trae_renovacion(app, cliente_autenticado, openapi_spec):
+    client, headers = cliente_autenticado
+    _, poliza_id = await _emitida(app, client, headers)
+
+    respuesta = await client.get(f"{RUTA}/{poliza_id}", headers=headers)
+
+    _validar(openapi_spec, "Poliza", respuesta.json())
+    assert respuesta.json()["renovacion"] is None
+
+
+async def test_la_poliza_desactivada_trae_el_aviso_al_banco(app, cliente_autenticado, openapi_spec):
+    client, headers = cliente_autenticado
+    polizas, poliza_id = await _emitida(app, client, headers)
+    polizas.sembrar_renovacion(
+        poliza_id,
+        estado="RECHAZADA",
+        avisoBanco={
+            "entidadAcreedora": "Bancolombia",
+            "tipo": "NO_RENOVACION",
+            "fechaEfectiva": "2027-11-13T17:00:00Z",
+            "registradoEn": "2027-10-14T12:00:00Z",
+            "canal": "SIMULADO",
+        },
+    )
+    polizas._polizas[poliza_id]["estado"] = "DESACTIVADA"
+
+    respuesta = await client.get(f"{RUTA}/{poliza_id}", headers=headers)
+
+    assert respuesta.status_code == 200
+    _validar(openapi_spec, "Poliza", respuesta.json())
+    assert respuesta.json()["estado"] == "DESACTIVADA"
+    assert respuesta.json()["renovacion"]["avisoBanco"]["canal"] == "SIMULADO"
+
+
+async def test_decidir_la_renovacion_usa_el_cliente_del_token(
+    app, cliente_autenticado, openapi_spec
+):
+    client, headers = cliente_autenticado
+    polizas, poliza_id = await _emitida(app, client, headers)
+    polizas.sembrar_renovacion(poliza_id)
+
+    respuesta = await client.post(
+        f"{RUTA}/{poliza_id}/renovacion", headers=headers, json={"decision": "RECHAZAR"}
+    )
+
+    assert respuesta.status_code == 200
+    _validar(openapi_spec, "Poliza", respuesta.json())
+    assert respuesta.json()["renovacion"]["estado"] == "RECHAZADA"
+    assert respuesta.headers["cache-control"] == "no-store"
+    cliente_id = (await client.get("/v1/cuenta", headers=headers)).json()["clienteId"]
+    assert polizas.llamadas[-1] == ("decidir_renovacion", cliente_id, poliza_id, "RECHAZAR")
+
+
+@pytest.mark.parametrize(
+    ("siembra", "codigo"),
+    [(None, "SIN_PROPUESTA"), ({"cerrada": True}, "PLAZO_VENCIDO")],
+)
+async def test_decidir_sin_propuesta_o_fuera_de_plazo_es_409_con_codigo(
+    app, cliente_autenticado, openapi_spec, siembra, codigo
+):
+    client, headers = cliente_autenticado
+    polizas, poliza_id = await _emitida(app, client, headers)
+    if siembra:
+        polizas.sembrar_renovacion(poliza_id, **siembra)
+
+    respuesta = await client.post(
+        f"{RUTA}/{poliza_id}/renovacion", headers=headers, json={"decision": "ACEPTAR"}
+    )
+
+    assert respuesta.status_code == 409
+    assert respuesta.json()["codigo"] == codigo
+    _validar(openapi_spec, "ProblemaPoliza", respuesta.json())
+
+
+async def test_decidir_la_renovacion_de_una_poliza_ajena_es_404(app, cliente_autenticado):
+    client, headers = cliente_autenticado
+    _con_polizas(app, FakePolizas())
+
+    respuesta = await client.post(
+        f"{RUTA}/no-existe/renovacion", headers=headers, json={"decision": "ACEPTAR"}
+    )
+
+    assert respuesta.status_code == 404
+
+
+async def test_la_decision_debe_ser_aceptar_o_rechazar(app, cliente_autenticado):
+    client, headers = cliente_autenticado
+    _, poliza_id = await _emitida(app, client, headers)
+
+    respuesta = await client.post(
+        f"{RUTA}/{poliza_id}/renovacion", headers=headers, json={"decision": "TAL_VEZ"}
+    )
+
+    assert respuesta.status_code == 400
+
+
+async def test_decidir_la_renovacion_exige_sesion(client):
+    respuesta = await client.post(f"{RUTA}/x/renovacion", json={"decision": "ACEPTAR"})
+
+    assert respuesta.status_code == 401

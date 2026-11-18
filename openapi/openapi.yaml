@@ -1457,6 +1457,52 @@ paths:
           $ref: '#/components/responses/NoEncontrado'
       security:
       - clienteAuth: []
+  /v1/cuenta/polizas/{polizaId}/renovacion:
+    parameters:
+    - $ref: '#/components/parameters/PolizaId'
+    post:
+      operationId: decidirRenovacionDeMiPoliza
+      tags:
+      - Pólizas
+      summary: Acepta o rechaza la renovación de mi póliza
+      description: |
+        Desde el aviso de vencimiento (45 días antes del aniversario, cuando `renovacion` aparece en
+        la póliza) hasta 30 días antes (`renovacion.decidirHasta`). Puedes cambiar de decisión
+        mientras no se cierre. Sin respuesta, la póliza se renueva con la prima nueva.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRenovacionRequest'
+      responses:
+        '200':
+          description: La póliza con la decisión registrada.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Poliza'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: Todavía no hay propuesta (`SIN_PROPUESTA`) o ya pasó el plazo (`PLAZO_VENCIDO`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemaPoliza'
+        '503':
+          $ref: '#/components/responses/NoDisponible'
+      security:
+      - clienteAuth: []
   /v1/cuenta/polizas/{polizaId}/documento:
     parameters:
     - $ref: '#/components/parameters/PolizaId'
@@ -1966,6 +2012,8 @@ components:
             - PENDIENTE_NO_APLICA
             - DOCUMENTO_NO_DISPONIBLE
             - DOCUMENTOS_LEGALES_NO_DISPONIBLES
+            - SIN_PROPUESTA
+            - PLAZO_VENCIDO
     Poliza:
       type: object
       required:
@@ -2077,6 +2125,91 @@ components:
             rechazadaEn:
               type: string
               format: date-time
+        renovacion:
+          oneOf:
+          - $ref: '#/components/schemas/Renovacion'
+          - type: 'null'
+          description: |
+            La propuesta de renovación, calculada al leer. Aparece desde el aviso de vencimiento
+            (45 días antes del aniversario) y sigue en la póliza `DESACTIVADA`. `null` antes.
+    Renovacion:
+      type: object
+      additionalProperties: false
+      required:
+      - estado
+      - primaActual
+      - primaNueva
+      - ipc
+      - fechaRenovacion
+      - decidirHasta
+      properties:
+        estado:
+          type: string
+          enum:
+          - SIN_RESPUESTA
+          - ACEPTADA
+          - RECHAZADA
+          description: Sin respuesta, la póliza se renueva.
+        primaActual:
+          type: number
+          description: Prima mensual total vigente (vida y Tu casa).
+        primaNueva:
+          type: number
+          description: '`primaActual` por (1 + `ipc`), sobre toda la prima, en pesos enteros.'
+        ipc:
+          type: number
+          example: 0.05
+          description: Índice de Precios al Consumidor aplicado.
+        fechaRenovacion:
+          type: string
+          format: date-time
+          description: El aniversario (`vigencia.hasta`).
+        decidirHasta:
+          type: string
+          format: date-time
+          description: 30 días antes del aniversario; después ya no se cambia la decisión.
+        avisoBanco:
+          oneOf:
+          - $ref: '#/components/schemas/AvisoBanco'
+          - type: 'null'
+          description: Solo si rechazó y ya se registró el aviso a la entidad acreedora.
+    AvisoBanco:
+      type: object
+      additionalProperties: false
+      required:
+      - entidadAcreedora
+      - tipo
+      - fechaEfectiva
+      - registradoEn
+      - canal
+      properties:
+        entidadAcreedora:
+          type: string
+        tipo:
+          type: string
+          enum:
+          - NO_RENOVACION
+        fechaEfectiva:
+          type: string
+          format: date-time
+        registradoEn:
+          type: string
+          format: date-time
+        canal:
+          type: string
+          enum:
+          - SIMULADO
+    DecisionRenovacionRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - decision
+      properties:
+        decision:
+          type: string
+          enum:
+          - ACEPTAR
+          - RECHAZAR
     CoberturaContratada:
       type: object
       additionalProperties: false
@@ -2185,7 +2318,9 @@ components:
       - EMITIDA
       - RECHAZADA
       - VENCIDA
-      description: '`VENCIDA` se deriva al leer; no se guarda.'
+      - DESACTIVADA
+      description: '`VENCIDA` se deriva al leer; no se guarda. `DESACTIVADA`: rechazó la renovación y
+        llegó el aniversario (BITS-387); todavía acepta siniestros de su vigencia.'
     TipoPendiente:
       type: string
       enum:

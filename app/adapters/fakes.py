@@ -598,6 +598,33 @@ class FakePolizas:
             "expiraEn": datetime.now(UTC).isoformat(),
         }, True
 
+    def sembrar_renovacion(self, poliza_id: str, **cambios) -> dict:
+        """Deja la propuesta de renovación ya armada (como la entrega svc-core al aviso de
+        vencimiento), para pruebas y para el front."""
+        poliza = self._polizas[poliza_id]
+        base = {
+            "estado": "SIN_RESPUESTA",
+            "primaActual": poliza["primaTotalMensual"],
+            "primaNueva": round(poliza["primaTotalMensual"] * 1.05),
+            "ipc": 0.05,
+            "fechaRenovacion": poliza["vigencia"]["hasta"],
+            "decidirHasta": poliza["vigencia"]["hasta"],
+            "avisoBanco": None,
+        }
+        poliza["renovacion"] = {**base, **cambios}
+        return poliza
+
+    async def decidir_renovacion(self, cliente_id: str, poliza_id: str, decision: str) -> dict:
+        self.llamadas.append(("decidir_renovacion", cliente_id, poliza_id, decision))
+        poliza = await self.obtener(cliente_id, poliza_id)
+        renovacion = poliza.get("renovacion")
+        if renovacion is None:
+            raise Conflicto("La póliza todavía no tiene propuesta", codigo="SIN_PROPUESTA")
+        if renovacion.get("cerrada"):
+            raise Conflicto("Ya pasó el plazo para decidir", codigo="PLAZO_VENCIDO")
+        renovacion["estado"] = "ACEPTADA" if decision == "ACEPTAR" else "RECHAZADA"
+        return poliza
+
 
 class FakeSiniestros:
     """Siniestros en memoria con la forma que entrega svc-core, con las reglas de las decisiones

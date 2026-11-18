@@ -272,7 +272,7 @@ CodigoPendiente = Literal[
     "EVIDENCIA_EN_REVISION",
     "CREDITO_NO_VERIFICADO",
 ]
-EstadoPoliza = Literal["PENDIENTE", "EMITIDA", "RECHAZADA", "VENCIDA"]
+EstadoPoliza = Literal["PENDIENTE", "EMITIDA", "RECHAZADA", "VENCIDA", "DESACTIVADA"]
 
 
 class DocumentoAceptadoIn(_Model):
@@ -344,6 +344,31 @@ class RechazoOut(_Respuesta):
     rechazada_en: datetime
 
 
+class AvisoBancoOut(_Respuesta):
+    entidad_acreedora: str
+    tipo: Literal["NO_RENOVACION"]
+    fecha_efectiva: datetime
+    registrado_en: datetime
+    canal: Literal["SIMULADO"]
+
+
+class RenovacionOut(_Respuesta):
+    """La propuesta de renovación (BITS-387): svc-core la calcula al leer, desde el aviso de
+    vencimiento (45 días antes del aniversario)."""
+
+    estado: Literal["SIN_RESPUESTA", "ACEPTADA", "RECHAZADA"]
+    prima_actual: float
+    prima_nueva: float
+    ipc: float
+    fecha_renovacion: datetime
+    decidir_hasta: datetime
+    aviso_banco: AvisoBancoOut | None = None
+
+
+class DecisionRenovacionRequest(_Model):
+    decision: Literal["ACEPTAR", "RECHAZAR"]
+
+
 class PolizaOut(_Respuesta):
     poliza_id: str
     numero: str | None = None
@@ -363,6 +388,7 @@ class PolizaOut(_Respuesta):
     documento: EstadoDocumentoOut
     documentos_aceptados: list[DocumentoAceptadoOut] = Field(default_factory=list)
     rechazo: RechazoOut | None = None
+    renovacion: RenovacionOut | None = None
 
 
 class DocumentoPolizaOut(_Respuesta):
