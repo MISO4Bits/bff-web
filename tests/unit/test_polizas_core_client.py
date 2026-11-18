@@ -147,3 +147,32 @@ async def test_una_poliza_inexistente_es_404():
 
     with pytest.raises(RecursoNoEncontrado):
         await _core().obtener("c1", "nada")
+
+
+@respx.mock
+async def test_decidir_renovacion_envia_la_decision_a_la_ruta_del_cliente():
+    ruta = respx.post(f"{POLIZAS}/p1/renovacion").mock(
+        return_value=httpx.Response(200, json={"polizaId": "p1"})
+    )
+
+    cuerpo = await _core().decidir_renovacion("c1", "p1", "RECHAZAR")
+
+    assert cuerpo == {"polizaId": "p1"}
+    assert (
+        ruta.calls[0].request.content
+        == httpx.Request("POST", POLIZAS, json={"decision": "RECHAZAR"}).content
+    )
+
+
+@respx.mock
+async def test_decidir_renovacion_conserva_el_codigo_del_conflicto():
+    respx.post(f"{POLIZAS}/p1/renovacion").mock(
+        return_value=httpx.Response(
+            409, json={"detail": "Ya pasó el plazo", "codigo": "PLAZO_VENCIDO"}
+        )
+    )
+
+    with pytest.raises(Conflicto) as error:
+        await _core().decidir_renovacion("c1", "p1", "ACEPTAR")
+
+    assert error.value.codigo == "PLAZO_VENCIDO"

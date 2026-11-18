@@ -157,6 +157,11 @@ class PolizasPort(Protocol):
         generando)."""
         ...
 
+    async def decidir_renovacion(self, cliente_id: str, poliza_id: str, decision: str) -> dict:
+        """Acepta o rechaza la renovación (BITS-387). ``Conflicto`` con ``codigo`` ``SIN_PROPUESTA``
+        o ``PLAZO_VENCIDO``."""
+        ...
+
 
 @runtime_checkable
 class VentasSocioPort(Protocol):
