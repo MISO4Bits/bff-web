@@ -627,6 +627,9 @@ class PolizaVendidaOut(_Respuesta):
     creada_en: datetime
     prima_total_mensual: float
     cliente: ClienteSocioOut | None = None
+    # La propuesta de renovación (BITS-387). El tablero cuenta las rechazadas antes del
+    # aniversario, que siguen EMITIDA hasta ese día.
+    renovacion: RenovacionOut | None = None
 
 
 class PolizasDelSocioOut(_Respuesta):
