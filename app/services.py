@@ -577,6 +577,7 @@ def _fila_de_poliza_vendida(poliza: dict) -> dict:
         "creadaEn": poliza["creadaEn"],
         "primaTotalMensual": poliza["primaTotalMensual"],
         "cliente": poliza.get("cliente"),
+        "renovacion": poliza.get("renovacion"),
     }
 
 

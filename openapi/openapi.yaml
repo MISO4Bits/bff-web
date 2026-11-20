@@ -1857,6 +1857,14 @@ components:
           oneOf:
             - { $ref: '#/components/schemas/ClienteSocio' }
             - { type: 'null' }
+        renovacion:
+          oneOf:
+            - { $ref: '#/components/schemas/Renovacion' }
+            - { type: 'null' }
+          description: |
+            La propuesta de renovación. `null` hasta el aviso de vencimiento (45 días antes del
+            aniversario). Una póliza cuyo cliente rechazó la renovación sigue `EMITIDA` con
+            `renovacion.estado = RECHAZADA` hasta el aniversario.
     PolizasDelSocio:
       type: object
       additionalProperties: false

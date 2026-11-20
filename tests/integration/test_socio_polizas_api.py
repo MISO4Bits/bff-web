@@ -138,7 +138,9 @@ async def test_cada_fila_trae_lo_que_pide_la_historia_y_no_filtra_datos_personal
         "creadaEn",
         "primaTotalMensual",
         "cliente",
+        "renovacion",
     }
+    assert fila["renovacion"] is None  # todavía no hay aviso de vencimiento
     for dato in (
         "52120001",
         "cliente1@example.com",
@@ -292,3 +294,49 @@ async def test_el_adaptador_traduce_los_errores_de_svc_core(estado, error):
             await adaptador.listar_polizas_del_socio("uid-1", 100, None)
     finally:
         await adaptador.aclose()
+
+
+async def test_la_fila_trae_la_renovacion_rechazada_antes_del_aniversario(
+    client, app, identidad, openapi_spec
+):
+    socio = await _cabecera(client, SOCIO)
+    rechazada = await _vender(client, socio, 1)
+    sin_decidir = await _vender(client, socio, 2)
+    app.state.deps.ventas.sembrar_renovacion(rechazada["polizaId"])
+    app.state.deps.ventas.sembrar_renovacion(sin_decidir["polizaId"], estado="SIN_RESPUESTA")
+
+    respuesta = await client.get(RUTA, headers=socio)
+
+    assert respuesta.status_code == 200
+    filas = {f["polizaId"]: f for f in respuesta.json()["items"]}
+    for fila in filas.values():
+        _validar(openapi_spec, "PolizaVendida", fila)
+    # La póliza sigue EMITIDA: solo `renovacion` distingue a la que ya rechazó.
+    assert filas[rechazada["polizaId"]]["estado"] == "EMITIDA"
+    assert filas[rechazada["polizaId"]]["renovacion"]["estado"] == "RECHAZADA"
+    assert filas[rechazada["polizaId"]]["renovacion"]["ipc"] == 0.05
+    assert filas[sin_decidir["polizaId"]]["renovacion"]["estado"] == "SIN_RESPUESTA"
+
+
+async def test_la_fila_de_una_desactivada_trae_el_aviso_al_banco(
+    client, app, identidad, openapi_spec
+):
+    socio = await _cabecera(client, SOCIO)
+    poliza = await _vender(client, socio, 1)
+    app.state.deps.ventas.sembrar_renovacion(
+        poliza["polizaId"],
+        avisoBanco={
+            "entidadAcreedora": "Bancolombia",
+            "tipo": "NO_RENOVACION",
+            "fechaEfectiva": "2027-11-13T17:00:00Z",
+            "registradoEn": "2027-10-14T12:00:00Z",
+            "canal": "SIMULADO",
+        },
+    )
+    app.state.deps.ventas.ventas[0]["estado"] = "DESACTIVADA"
+
+    [fila] = (await client.get(RUTA, headers=socio)).json()["items"]
+
+    _validar(openapi_spec, "PolizaVendida", fila)
+    assert fila["estado"] == "DESACTIVADA"
+    assert fila["renovacion"]["avisoBanco"]["tipo"] == "NO_RENOVACION"

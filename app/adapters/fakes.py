@@ -993,11 +993,27 @@ class FakeVentasSocio:
                     "socioId": p["socioId"],
                     "emitidaEn": p["emitidaEn"],
                     "cliente": self._del_cliente(p["clienteId"]),
+                    "renovacion": p.get("renovacion"),
                 }
                 for p in pagina
             ],
             "siguienteCursor": str(desde + limite) if desde + limite < len(propias) else None,
         }
+
+    def sembrar_renovacion(self, poliza_id: str, **cambios) -> dict:
+        """Deja la propuesta de renovación en una póliza vendida, como la entrega svc-core."""
+        poliza = next(p for p in self.ventas if p["polizaId"] == poliza_id)
+        base = {
+            "estado": "RECHAZADA",
+            "primaActual": poliza["primaTotalMensual"],
+            "primaNueva": round(poliza["primaTotalMensual"] * 1.05),
+            "ipc": 0.05,
+            "fechaRenovacion": poliza["vigencia"]["hasta"],
+            "decidirHasta": poliza["vigencia"]["hasta"],
+            "avisoBanco": None,
+        }
+        poliza["renovacion"] = {**base, **cambios}
+        return poliza
 
     def _del_cliente(self, cliente_id: str) -> dict | None:
         cliente = self.clientes.get(cliente_id)
